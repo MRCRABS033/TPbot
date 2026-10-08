@@ -1,0 +1,101 @@
+{
+    "marka conel": {
+        "char_name": "Marka Conel",
+        "tibia_link": "[Marka Conel](https://www.tibia.com/community/?subtopic=characters&name=marka+conel)",
+        "owner": "Miguel",
+        "initial_level": 164,
+        "weekly_start_level": 164,
+        "current_level": 168,
+        "vocation": "Master Sorcerer"
+    },
+    "chi quito": {
+        "char_name": "Chi Quito",
+        "tibia_link": "[Chi Quito](https://www.tibia.com/community/?subtopic=characters&name=chi+quito)",
+        "owner": "Chiquito",
+        "initial_level": 435,
+        "weekly_start_level": 435,
+        "current_level": 436,
+        "vocation": "Master Sorcerer"
+    },
+    "viejoloko": {
+        "char_name": "Viejoloko",
+        "tibia_link": "[Viejoloko](https://www.tibia.com/community/?subtopic=characters&name=viejoloko)",
+        "owner": "Jose",
+        "initial_level": 127,
+        "weekly_start_level": 127,
+        "current_level": 128,
+        "vocation": "Royal Paladin"
+    },
+    "warrgrriff": {
+        "char_name": "Warrgrriff",
+        "tibia_link": "[Warrgrriff](https://www.tibia.com/community/?subtopic=characters&name=warrgrriff)",
+        "owner": "Samuel",
+        "initial_level": 424,
+        "weekly_start_level": 424,
+        "current_level": 425,
+        "vocation": "Elder Druid"
+    },
+    "carion carrier": {
+        "char_name": "Carion Carrier",
+        "tibia_link": "[Carion Carrier](https://www.tibia.com/community/?subtopic=characters&name=carion+carrier)",
+        "owner": "Karma",
+        "initial_level": 373,
+        "weekly_start_level": 373,
+        "current_level": 376,
+        "vocation": "Elite Knight"
+    },
+    "darkwa malynechai": {
+        "char_name": "Darkwa Malynechai",
+        "tibia_link": "[Darkwa Malynechai](https://www.tibia.com/community/?subtopic=characters&name=darkwa+malynechai)",
+        "owner": "Jahir",
+        "initial_level": 137,
+        "weekly_start_level": 137,
+        "current_level": 139,
+        "vocation": "Elite Knight"
+    },
+    "zussybean": {
+        "char_name": "Zussybean",
+        "tibia_link": "[Zussybean](https://www.tibia.com/community/?subtopic=characters&name=zussybean)",
+        "owner": "Mariguas",
+        "initial_level": 142,
+        "weekly_start_level": 142,
+        "current_level": 142,
+        "vocation": "Exalted Monk"
+    },
+    "icemanns": {
+        "char_name": "Icemanns",
+        "tibia_link": "[Icemanns](https://www.tibia.com/community/?subtopic=characters&name=icemanns)",
+        "owner": "Mariguas",
+        "initial_level": 33,
+        "weekly_start_level": 33,
+        "current_level": 33,
+        "vocation": "Master Sorcerer"
+    },
+    "bartersix": {
+        "char_name": "Bartersix",
+        "tibia_link": "[Bartersix](https://www.tibia.com/community/?subtopic=characters&name=bartersix)",
+        "owner": "Mariguas",
+        "initial_level": 32,
+        "weekly_start_level": 32,
+        "current_level": 33,
+        "vocation": "Royal Paladin"
+    },
+    "luvi amyce": {
+        "char_name": "Luvi Amyce",
+        "tibia_link": "[Luvi Amyce](https://www.tibia.com/community/?subtopic=characters&name=luvi+amyce)",
+        "owner": "Valentina",
+        "initial_level": 56,
+        "weekly_start_level": 56,
+        "current_level": 56,
+        "vocation": "Royal Paladin"
+    },
+    "superchoco": {
+        "char_name": "Superchoco",
+        "tibia_link": "[Superchoco](https://www.tibia.com/community/?subtopic=characters&name=superchoco)",
+        "owner": "Miguel",
+        "initial_level": 98,
+        "weekly_start_level": 98,
+        "current_level": 98,
+        "vocation": "Royal Paladin"
+    }
+}
