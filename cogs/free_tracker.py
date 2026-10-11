@@ -28,7 +28,7 @@ class FreeTracker(commands.Cog):
             account_status = res["character_info"].get("account_status", "").lower()
             if "free" in account_status:
                 url = f"https://www.tibia.com/community/?subtopic=characters&name={p_name.replace(' ', '+')}"
-                return f"• [{p_name}]({url}) (Nivel {player.get('level', 0)} - {player.get('vocation', '')})"
+                return f"• [{p_name}]({url}) (Nivel {player.get('level', 0)} {player.get('vocation', '')})"
             return None
 
     @tasks.loop(seconds=60)
