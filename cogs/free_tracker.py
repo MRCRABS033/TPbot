@@ -57,6 +57,13 @@ class FreeTracker(commands.Cog):
 
             await send_or_update_embed(self.bot, self.free_embed_message, "frees", embed)
 
+    @commands.command(name="free")
+    async def free_command(self, ctx):
+        """Comando manual para forzar la actualización del embed de free accounts"""
+        await ctx.send("🔍 Actualizando lista de Free Accounts manualmente...")
+        await self.update_free_players()
+        await ctx.send("✅ ¡Actualización completada!")
+
     @update_free_players.before_loop
     async def before_update(self):
         await self.bot.wait_until_ready()
