@@ -11,3 +11,4 @@ propcache==0.5.4
 yarl==1.25.1
 python-dotenv==1.0.1
 discord.py==2.7.1
+pytz==2024.1
