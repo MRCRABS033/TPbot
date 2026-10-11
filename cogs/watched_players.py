@@ -1,19 +1,55 @@
 from datetime import datetime
+import asyncio
 import discord
 from discord.ext import commands, tasks
 import pytz
+import services.tibia_api as tibiapy
 
 from config import WATCHED_PLAYERS, logger
 from services.storage import save_data
 
 
-class WeeklyTracker(commands.Cog):
+class WatchedPlayers(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.check_server_save.start()
+        self.update_players_levels.start()
 
     def cog_unload(self):
         self.check_server_save.cancel()
+        self.update_players_levels.cancel()
+
+    # --- TAREA PARA ACTUALIZAR NIVELES DESDE LA API DE TIBIA ---
+    @tasks.loop(hours=1)
+    async def update_players_levels(self):
+        """Consulta periódicamente la API de Tibia para actualizar el nivel de cada personaje."""
+        client = tibiapy.TibiaClient()
+        
+        for key, data in WATCHED_PLAYERS.items():
+            char_name = data.get("char_name")
+            if not char_name:
+                continue
+            
+            try:
+                char_data = await client.get_character(char_name)
+                if char_data and char_data.character:
+                    new_level = char_data.character.level
+                    
+                    if "weekly_start_level" not in data:
+                        data["weekly_start_level"] = new_level
+                        
+                    data["current_level"] = new_level
+                    logger.info(f"📊 [API Tibia] Actualizado {char_name}: Nivel {new_level}")
+            except Exception as e:
+                logger.error(f"❌ Error al consultar la API de Tibia para {char_name}: {e}")
+            
+            await asyncio.sleep(2)
+            
+        save_data()
+
+    @update_players_levels.before_loop
+    async def before_update(self):
+        await self.bot.wait_until_ready()
 
     # --- COMANDO PARA VER LA TABLA ACTUAL ---
     @commands.command(name="empleado", aliases=["top", "semana"])
@@ -23,7 +59,6 @@ class WeeklyTracker(commands.Cog):
             await ctx.send("📋 La lista de seguimiento está vacía.")
             return
 
-        # Ordenar jugadores por niveles ganados en la semana
         ranking = []
         for key, data in WATCHED_PLAYERS.items():
             curr = data.get("current_level", 0)
@@ -31,12 +66,11 @@ class WeeklyTracker(commands.Cog):
             gained = max(0, curr - start)
             ranking.append((data["char_name"], data["owner"], gained, curr))
 
-        # Ordenar de mayor a menor
         ranking.sort(key=lambda x: x[2], reverse=True)
 
         embed = discord.Embed(
             title="🏆 Ranking Semanal - Empleado del Mes",
-            description="Progreso de niveles acumulados durante la semana actual:",
+            description="Progreso de niveles acumulados durante la semana actual:\n",
             color=discord.Color.gold(),
         )
 
@@ -47,8 +81,8 @@ class WeeklyTracker(commands.Cog):
             icon = medals[idx - 1] if idx <= 3 else f"`#{idx}`"
             lines.append(f"{icon} **{char}** ({owner}) ➔ **+{gained} lvl** (Nivel actual: {curr})")
 
-        embed.description = "\n".join(lines)
-        embed.set_footer(text="El conteo se reinicia cada domingo en el Server Save.")
+        embed.description += "\n".join(lines)
+        embed.set_footer(text="El conteo se reinicia cada domingo en el Server Save (10:00 AM CET).")
         await ctx.send(embed=embed)
 
     # --- TAREA PROGRAMADA EN EL SERVER SAVE ---
@@ -57,13 +91,12 @@ class WeeklyTracker(commands.Cog):
         germany_tz = pytz.timezone("Europe/Berlin")
         now_germany = datetime.now(germany_tz)
 
-        # Verificar si es Server Save (10:00 AM hora Alemania)
         if now_germany.hour == 10 and now_germany.minute == 0:
             logger.info("⏰ Hora de Server Save detectada.")
 
-            # Si es DOMINGO (weekday() == 6), anunciamos al ganador semanal y reiniciamos
             if now_germany.weekday() == 6:
                 await self.announce_weekly_winner()
+                await asyncio.sleep(60)
 
     async def announce_weekly_winner(self):
         channel = discord.utils.get(self.bot.get_all_channels(), name="empleado-del-mes")
@@ -71,7 +104,7 @@ class WeeklyTracker(commands.Cog):
             channel = discord.utils.get(self.bot.get_all_channels(), name="empleado")
 
         if not channel:
-            logger.warning("⚠️ No se encontró el canal 'empleado-del-mes' en Discord.")
+            logger.warning("⚠️ No se encontró el canal 'empleado-del-mes' o 'empleado' en Discord.")
             return
 
         ranking = []
@@ -81,7 +114,6 @@ class WeeklyTracker(commands.Cog):
             gained = max(0, curr - start)
             ranking.append((data["char_name"], data["owner"], gained))
 
-            # Reiniciar nivel de inicio de la semana para el nuevo ciclo
             data["weekly_start_level"] = curr
 
         save_data()
@@ -108,4 +140,4 @@ class WeeklyTracker(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(WeeklyTracker(bot))
+    await bot.add_cog(WatchedPlayers(bot))

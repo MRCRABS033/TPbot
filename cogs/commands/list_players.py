@@ -38,3 +38,6 @@ class ListCommands(commands.Cog):
             embed.add_field(name=f"👤 Dueño: {owner}", value=chars_formatted, inline=False)
 
         await ctx.send(embed=embed)
+
+async def setup(bot):
+    await bot.add_cog(ListCommands(bot))

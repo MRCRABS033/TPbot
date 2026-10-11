@@ -26,3 +26,6 @@ class RemoveCommand(commands.Cog):
             )
         else:
             await ctx.send(f"⚠️ El personaje **{character_name}** no está registrado.")
+
+async def setup(bot):
+    await bot.add_cog(RemoveCommand(bot))

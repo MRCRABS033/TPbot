@@ -30,3 +30,6 @@ class OwnerCommands(commands.Cog):
             color=discord.Color.purple(),
         )
         await ctx.send(embed=embed)
+
+async def setup(bot):
+    await bot.add_cog(OwnerCommands(bot))

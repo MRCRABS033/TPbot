@@ -11,9 +11,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 INITIAL_EXTENSIONS = [
-    "cogs.commands",
     "cogs.death_tracker",
     "cogs.free_tracker",
+    "cogs.watched_players",
     "cogs.watched_tracker",
 ]
 
