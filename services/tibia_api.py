@@ -59,3 +59,19 @@ async def fetch_world_online_players(session, world_name: str = "Quidera"):
         logger.error(f"❌ Error al consultar el mundo {world_name}: {e}")
 
     return []
+
+async def fetch_boosted_boss(session):
+    """Boss boosted del día según TibiaData v4. Devuelve {"name", "image_url"} o None si falla."""
+    url = "https://api.tibiadata.com/v4/boostablebosses"
+    try:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                boosted = data.get("boostable_bosses", {}).get("boosted", {})
+                if boosted.get("name"):
+                    return {"name": boosted["name"], "image_url": boosted.get("image_url")}
+            else:
+                logger.warning(f"⚠️ HTTP {response.status} al consultar el boss boosted")
+    except Exception as e:
+        logger.error(f"❌ Error al consultar el boss boosted: {e}")
+    return None
