@@ -23,6 +23,7 @@ from services.discord_utils import _get_previous_message
 from services.online_embeds import player_url
 from services.task_utils import resilient
 from services.tibia_api import fetch_boosted_boss
+from services.tibia_wiki import fetch_boss_info, wiki_file_names_for
 
 # La hora que se escribe al crear la actividad se interpreta en hora de México (Ciudad de México).
 # Discord no informa la zona horaria de cada usuario; en el anuncio cada quien la ve en su hora local.
@@ -40,22 +41,6 @@ BOSSES_URL = "https://www.tibia.com/library/?subtopic=boostablebosses"
 # Fuente principal: TibiaWiki BR (imágenes animadas). static.tibia.com bloquea muchas descargas
 # automáticas (depende del servidor donde corra el bot), así que queda como respaldo.
 WIKI_FILE_URL = "https://www.tibiawiki.com.br/wiki/Special:FilePath/{}"
-_SMALL_WORDS = {"the", "of", "a", "an", "in", "on", "and"}
-
-
-def wiki_file_names(boss_name):
-    """
-    Nombres de archivo posibles en TibiaWiki para un boss:
-    'Neferi The Spy' -> Neferi_The_Spy.gif, Neferi_the_Spy.gif (y variantes con guion).
-    """
-    words = boss_name.split()
-    small_lower = [w.lower() if i > 0 and w.lower() in _SMALL_WORDS else w for i, w in enumerate(words)]
-    # 'Many-Headed' -> 'Many-headed' (algunas páginas solo capitalizan la primera parte)
-    hyphen_lower = [w[:1] + w[1:].lower() for w in small_lower]
-    names = ["_".join(words), "_".join(small_lower), "_".join(hyphen_lower)]
-    return [f"{n}.gif" for n in dict.fromkeys(names)]
-
-
 def _upscale(data):
     """Agranda la imagen sin suavizar (pixel art nítido). Mantiene la animación si la tiene."""
     image = Image.open(io.BytesIO(data))
@@ -79,7 +64,7 @@ async def download_boss_image(boss):
     Descarga la imagen del boss (TibiaWiki BR y, si falla, static.tibia.com) y la agranda.
     Devuelve (bytes, nombre_de_archivo) o None.
     """
-    urls = [WIKI_FILE_URL.format(name) for name in wiki_file_names(boss["name"])]
+    urls = [WIKI_FILE_URL.format(name) for name in wiki_file_names_for(boss["name"])]
     if boss.get("image_url"):
         urls.append(boss["image_url"])
 
@@ -150,7 +135,31 @@ def format_activity_time(text):
 
 
 # --- EMBEDS ---
-def build_boss_card(boss, image_url):
+def _number(value):
+    """'28000' -> '28.000'."""
+    try:
+        return f"{int(value):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return value
+
+
+def add_boss_info_fields(embed, info, with_location=True):
+    """Clase, vida, experiencia, cooldown y zona del boss (datos de TibiaWiki)."""
+    if not info:
+        return
+    if info.get("bosstiaryclass"):
+        embed.add_field(name="Clase", value=info["bosstiaryclass"], inline=True)
+    if info.get("hp"):
+        embed.add_field(name="Vida", value=_number(info["hp"]), inline=True)
+    if info.get("exp"):
+        embed.add_field(name="Experiencia", value=_number(info["exp"]), inline=True)
+    if info.get("cooldown"):
+        embed.add_field(name="Cooldown", value=f"{info['cooldown']} h", inline=True)
+    if with_location and info.get("location"):
+        embed.add_field(name="Zona", value=info["location"][:1024], inline=False)
+
+
+def build_boss_card(boss, image_url, info=None):
     embed = discord.Embed(
         title=boss["name"],
         url=BOSSES_URL,
@@ -159,13 +168,14 @@ def build_boss_card(boss, image_url):
         timestamp=discord.utils.utcnow(),
     )
     embed.set_author(name=CARD_MARKER)
+    add_boss_info_fields(embed, info)
     if image_url:
         embed.set_image(url=image_url)
     embed.set_footer(text="Cambia en cada Server Save (10:00 CET)")
     return embed
 
 
-def build_activity_embed(boss, time_text, note, participants, organizer, image_url):
+def build_activity_embed(boss, time_text, note, participants, organizer, image_url, info=None):
     embed = discord.Embed(
         title=f"Actividad en grupo: {boss['name']}",
         url=BOSSES_URL,
@@ -176,6 +186,8 @@ def build_activity_embed(boss, time_text, note, participants, organizer, image_u
     embed.add_field(name="Hora", value=format_activity_time(time_text), inline=True)
     embed.add_field(name="Boss boosted", value=boss["name"], inline=True)
     embed.add_field(name="Organiza", value=organizer.mention, inline=True)
+    if info and info.get("location"):
+        embed.add_field(name="Zona", value=info["location"][:1024], inline=False)
 
     lines = [
         f"**[{d['char_name']}]({player_url(d['char_name'])})** · {d['owner']} · "
@@ -225,7 +237,7 @@ class ActivityModal(discord.ui.Modal, title="Crear actividad"):
 
         image_url, file = boss_media(cog)
         embed = build_activity_embed(view.boss, self.time.value, self.note.value, participants,
-                                     interaction.user, image_url)
+                                     interaction.user, image_url, cog.boss_info if cog else None)
         await channel.send(**_send_kwargs(embed, file))
         logger.info(f"📣 Actividad de {view.boss['name']} creada por {interaction.user} "
                     f"({len(participants)} participantes, hora: {self.time.value})")
@@ -311,6 +323,7 @@ class BossTracker(commands.Cog):
         self.bot = bot
         self.current_boss = None
         self.image = None  # (bytes, nombre_de_archivo) de la imagen agrandada del boss
+        self.boss_info = None  # Clase, vida, experiencia, cooldown y zona (TibiaWiki)
         self.card_message = {}  # { guild_id: id de la tarjeta en #bosses }
         bot.add_view(BossCardView())
         self.update_boss_card.start()
@@ -332,6 +345,8 @@ class BossTracker(commands.Cog):
             return False
         self.current_boss = boss
         self.image = await download_boss_image(boss)
+        async with aiohttp.ClientSession() as session:
+            self.boss_info = await fetch_boss_info(session, boss["name"])
         logger.info(f"👑 Boss boosted de hoy: {boss['name']}")
         return True
 
@@ -358,7 +373,8 @@ class BossTracker(commands.Cog):
 
             image_url, file = boss_media(self)
             new_msg = await channel.send(
-                **_send_kwargs(build_boss_card(self.current_boss, image_url), file, view=BossCardView()),
+                **_send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
+                               view=BossCardView()),
                 silent=not changed,
             )
             self.card_message[guild.id] = new_msg.id
@@ -376,7 +392,8 @@ class BossTracker(commands.Cog):
             await ctx.send("⚠️ No se pudo consultar el boss de hoy. Intenta en un momento.")
             return
         image_url, file = boss_media(self)
-        await ctx.send(**_send_kwargs(build_boss_card(self.current_boss, image_url), file, view=BossCardView()))
+        await ctx.send(**_send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
+                                      view=BossCardView()))
 
 
 async def setup(bot):
