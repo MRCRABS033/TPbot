@@ -1,5 +1,6 @@
 import aiohttp
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from config import WATCHED_PLAYERS, PLAYERS_STATE, logger
@@ -10,7 +11,8 @@ class OwnerCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="owner")
+    @commands.hybrid_command(name="owner", description="Muestra los personajes de un dueño")
+    @app_commands.describe(owner_name="Nombre del dueño")
     async def list_chars_by_owner(self, ctx, *, owner_name: str):
         logger.info(f"📩 Comando !owner ejecutado por {ctx.author} para el dueño: '{owner_name}'")
         search_owner = owner_name.strip().lower()

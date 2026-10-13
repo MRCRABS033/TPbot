@@ -2,6 +2,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+from channels import CHANNEL_FREES, find_channel
 from config import WATCHED_PLAYERS, PLAYERS_STATE, logger
 from services.tibia_api import fetch_player_data, fetch_world_online_players
 from services.storage import save_data
@@ -14,9 +15,9 @@ class FreeCommands(commands.Cog):
     async def list_free_players(self, ctx, world: str = "Quidera"):
         logger.info(f"📩 Comando !free ejecutado por {ctx.author} para el mundo: '{world}'")
 
-        target_channel = discord.utils.get(ctx.guild.text_channels, name="frees")
+        target_channel = find_channel(ctx.guild.text_channels, CHANNEL_FREES)
         if not target_channel:
-            await ctx.send("⚠️ No se encontró el canal de texto **#frees** en este servidor.")
+            await ctx.send(f"⚠️ No se encontró el canal de texto **#{CHANNEL_FREES}** en este servidor.")
             return
 
         await ctx.send(f"🔍 Consultando jugadores Free Account en **{world}**... (El resultado se enviará a {target_channel.mention})")
