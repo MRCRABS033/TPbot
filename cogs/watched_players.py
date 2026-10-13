@@ -3,10 +3,10 @@ import asyncio
 import discord
 from discord.ext import commands, tasks
 import pytz
-import services.tibia_api as tibiapy
 
 from channels import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_channel
 from config import WATCHED_PLAYERS, logger
+from services.task_utils import resilient
 from services.storage import save_data
 
 # --- PUBLICACIÓN AUTOMÁTICA DEL RANKING ---
@@ -25,12 +25,10 @@ class WatchedPlayers(commands.Cog):
         self.ranking_messages = {}
         self.winner_messages = {}
         self.check_server_save.start()
-        self.update_players_levels.start()
         self.post_daily_ranking.start()
 
     def cog_unload(self):
         self.check_server_save.cancel()
-        self.update_players_levels.cancel()
         self.post_daily_ranking.cancel()
 
     def _get_empleado_channel(self):
@@ -38,38 +36,6 @@ class WatchedPlayers(commands.Cog):
         if not channel:
             channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO_ALT)
         return channel
-
-    # --- TAREA PARA ACTUALIZAR NIVELES DESDE LA API DE TIBIA ---
-    @tasks.loop(hours=1)
-    async def update_players_levels(self):
-        """Consulta periódicamente la API de Tibia para actualizar el nivel de cada personaje."""
-        client = tibiapy.TibiaClient()
-        
-        for key, data in WATCHED_PLAYERS.items():
-            char_name = data.get("char_name")
-            if not char_name:
-                continue
-            
-            try:
-                char_data = await client.get_character(char_name)
-                if char_data and char_data.character:
-                    new_level = char_data.character.level
-                    
-                    if "weekly_start_level" not in data:
-                        data["weekly_start_level"] = new_level
-                        
-                    data["current_level"] = new_level
-                    logger.info(f"📊 [API Tibia] Actualizado {char_name}: Nivel {new_level}")
-            except Exception as e:
-                logger.error(f"❌ Error al consultar la API de Tibia para {char_name}: {e}")
-            
-            await asyncio.sleep(2)
-            
-        save_data()
-
-    @update_players_levels.before_loop
-    async def before_update(self):
-        await self.bot.wait_until_ready()
 
     # --- COMANDO PARA VER LA TABLA ACTUAL ---
     @commands.hybrid_command(name="empleado", aliases=["top", "semana"], description="Muestra el ranking semanal del empleado del mes")
@@ -83,6 +49,7 @@ class WatchedPlayers(commands.Cog):
         await ctx.send(embed=await self._build_ranking_embed())
 
     # --- TAREA: PUBLICA EL RANKING TODOS LOS DÍAS A LAS 12 A. M. Y 12 P. M. ---
+    @resilient
     @tasks.loop(time=RANKING_TIMES)
     async def post_daily_ranking(self):
         if not WATCHED_PLAYERS:
@@ -182,6 +149,7 @@ class WatchedPlayers(commands.Cog):
         return embed
 
     # --- TAREA PROGRAMADA EN EL SERVER SAVE ---
+    @resilient
     @tasks.loop(minutes=1)
     async def check_server_save(self):
         germany_tz = pytz.timezone("Europe/Berlin")

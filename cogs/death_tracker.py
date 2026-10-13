@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 
 from channels import CHANNEL_DEATHS, find_channel
 from config import PLAYERS_STATE, WATCHED_PLAYERS, logger
+from services.task_utils import resilient
 from services.tibia_api import fetch_player_data
 from services.tibia_wiki import creature_file_name, fetch_wiki_image, vocation_file_name
 
@@ -30,6 +31,8 @@ class DeathTracker(commands.Cog):
 
     def cog_unload(self):
         self.track_tibia_players.cancel()
+
+    @resilient
 
     @tasks.loop(seconds=60)
     async def track_tibia_players(self):

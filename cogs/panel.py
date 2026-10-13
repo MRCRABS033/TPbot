@@ -12,6 +12,7 @@ from discord.ext import commands, tasks
 
 from channels import CHANNEL_TPBOT, find_channel
 from config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
+from services.task_utils import resilient
 from services import roster
 from services.discord_utils import send_or_update_embed
 
@@ -198,6 +199,7 @@ class Panel(commands.Cog):
         self.update_group_list.cancel()
 
     # --- PANEL DEL GRUPO (siempre al final de #tpbot) ---
+    @resilient
     @tasks.loop(seconds=60)
     async def update_group_list(self):
         await send_or_update_embed(

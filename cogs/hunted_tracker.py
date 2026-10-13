@@ -8,6 +8,7 @@ from channels import CHANNEL_HUNTEDS
 from cogs.death_tracker import DeathTracker
 from cogs.panel import HuntedPanelView
 from config import HUNTED_PLAYERS, WORLD, logger
+from services.task_utils import resilient
 from services.discord_utils import broadcast_embed, repost_embed, send_or_update_embed
 from services.online_embeds import build_grouped_online_embeds, player_url
 from services.roster import add_hunted, build_hunted_list_embed, remove_hunted
@@ -51,6 +52,7 @@ class HuntedTracker(commands.Cog):
         await ctx.send(embed=remove_hunted(character_name))
 
     # --- TAREA AUTOMÁTICA ---
+    @resilient
     @tasks.loop(seconds=60)
     async def track_hunteds(self):
         if not HUNTED_PLAYERS:

@@ -6,6 +6,7 @@ from discord.ext import commands, tasks
 
 from channels import CHANNEL_FREES, find_channel
 from config import logger
+from services.task_utils import resilient
 from services.discord_utils import broadcast_embed, move_list_to_bottom, repost_embed, send_or_update_embed
 from services.tibia_api import fetch_player_data, fetch_world_online_players
 from services.tibia_wiki import vocation_image_url
@@ -46,6 +47,8 @@ class FreeTracker(commands.Cog):
         is_free = "free" in res["character_info"].get("account_status", "").lower()
         self.account_cache[name] = (is_free, time.monotonic())
         return is_free
+
+    @resilient
 
     @tasks.loop(seconds=60)
     async def update_free_players(self):
