@@ -5,6 +5,7 @@ from discord.ext import commands, tasks
 
 from channels import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
 from config import WATCHED_PLAYERS, logger
+from services.task_utils import resilient
 from services.discord_utils import broadcast_embed, repost_embed, send_or_update_embed
 from services.storage import save_data
 from services.tibia_api import fetch_player_data, fetch_world_online_players
@@ -122,6 +123,8 @@ class WatchedTracker(commands.Cog):
         embed.set_thumbnail(url=vocation_image_url(vocation))
         embed.set_footer(text=f"Mundo: {world}")
         return embed
+
+    @resilient
 
     @tasks.loop(seconds=60)
     async def update_online_watched_players(self):

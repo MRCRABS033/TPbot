@@ -22,6 +22,7 @@ from channels import (
     find_channel,
 )
 from config import logger
+from services.task_utils import resilient
 
 # Todos los días a las 12:00 a. m. y 12:00 p. m. (hora de Colombia, UTC-5)
 CLEANUP_TZ = timezone(timedelta(hours=-5))
@@ -58,6 +59,8 @@ class Cleanup(commands.Cog):
 
     def cog_unload(self):
         self.clean_channels.cancel()
+
+    @resilient
 
     @tasks.loop(time=CLEANUP_TIMES)
     async def clean_channels(self):
