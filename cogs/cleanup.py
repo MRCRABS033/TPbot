@@ -29,7 +29,11 @@ CLEANUP_TIMES = [time(hour=0, minute=0, tzinfo=CLEANUP_TZ), time(hour=12, minute
 
 # Roles que pueden usar !limpiar (además de los administradores del servidor). Se ignoran
 # mayúsculas e íconos del nombre del rol.
-CLEANUP_ROLES = {"desarrollador", "desarrolladores", "developer", "developers", "dev", "devs"}
+CLEANUP_ROLES = {
+    "desarrollador", "desarrolladores", "developer", "developers", "dev", "devs",
+    "programador", "programadores", "programadora", "programadoras",
+    "admin", "admins", "administrador", "administradores", "administradora", "administradoras", "administrator",
+}
 
 # No se borran los mensajes publicados en los últimos minutos (por ejemplo, el ranking
 # diario, que se publica a la misma hora que la limpieza)
@@ -97,11 +101,11 @@ class Cleanup(commands.Cog):
             return True
         return any(_normalize(role.name) in CLEANUP_ROLES for role in ctx.author.roles)
 
-    @commands.hybrid_command(name="limpiar", description="Limpia ahora todos los canales del bot (solo admins y desarrolladores)")
+    @commands.hybrid_command(name="limpiar", description="Limpia ahora todos los canales del bot (solo admins, desarrolladores y programadores)")
     async def clean_command(self, ctx):
         if not self._can_clean(ctx):
             logger.warning(f"⛔ {ctx.author} intentó usar !limpiar sin permiso")
-            await ctx.send("⛔ Solo los administradores y desarrolladores pueden usar este comando.", ephemeral=True)
+            await ctx.send("⛔ Solo los administradores, desarrolladores y programadores pueden usar este comando.", ephemeral=True)
             return
 
         logger.info(f"📩 Comando !limpiar ejecutado por {ctx.author}")
