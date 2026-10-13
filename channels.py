@@ -25,6 +25,12 @@ CHANNEL_EMPLEADO_ALT = "empleado"  # Alternativo si no existe CHANNEL_EMPLEADO
 # Lista de hunteds online y avisos de conexión, nivel y muerte de hunteds (hunted_tracker)
 CHANNEL_HUNTEDS = "hunteds"
 
+# Boss boosted del día con el botón para organizar una actividad en grupo (bosses)
+CHANNEL_BOSSES = "bosses"
+
+# Anuncios de las actividades en grupo creadas desde #bosses
+CHANNEL_ANUNCIOS = "anuncios"
+
 
 # --- BÚSQUEDA DE CANALES ---
 def _normalize(name: str) -> str:

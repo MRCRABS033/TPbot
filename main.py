@@ -16,6 +16,7 @@ INITIAL_EXTENSIONS = [
     "cogs.watched_players",
     "cogs.watched_tracker",
     "cogs.hunted_tracker",
+    "cogs.bosses",
     "cogs.panel",
     "cogs.cleanup",
     "cogs.commands.add",

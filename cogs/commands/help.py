@@ -22,6 +22,9 @@ COMMAND_SECTIONS = {
         ("!muertes", "Muestra las muertes de hoy de los personajes del grupo."),
         ("!free", "Muestra la lista de jugadores free online."),
     ],
+    "Bosses": [
+        ("!boss", "Muestra el boss boosted de hoy, con el botón para organizarlo en grupo."),
+    ],
     "Administración": [
         ("!limpiar", "Limpia ahora todos los canales del bot. Solo administradores, desarrolladores y programadores."),
     ],

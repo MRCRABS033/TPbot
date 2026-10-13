@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands, tasks
 
 from channels import (
+    CHANNEL_BOSSES,
     CHANNEL_DEATHS,
     CHANNEL_EMPLEADO,
     CHANNEL_EMPLEADO_ALT,
@@ -46,6 +47,7 @@ CHANNELS_TO_CLEAN = [
     ([CHANNEL_ONLINES], "WatchedTracker", ["watched_embed_message"]),
     ([CHANNEL_FREES], "FreeTracker", ["free_embed_message"]),
     ([CHANNEL_HUNTEDS], "HuntedTracker", ["list_message"]),
+    ([CHANNEL_BOSSES], "BossTracker", ["card_message"]),
     ([CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT], "WatchedPlayers", ["ranking_messages", "winner_messages"]),
     ([CHANNEL_DEATHS], None, []),
     ([CHANNEL_LEVEL, CHANNEL_LEVEL_ALT], None, []),
