@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands, tasks
 import pytz
 
+from channels import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_channel
 from config import WATCHED_PLAYERS, logger
 from services.storage import save_data
 
@@ -24,9 +25,9 @@ class WeeklyTracker(commands.Cog):
     # --- TAREA 1: ACTUALIZA EL MENSAJE FIJADO CADA MINUTO ---
     @tasks.loop(minutes=1)
     async def update_pinned_empleado(self):
-        channel = discord.utils.get(self.bot.get_all_channels(), name="empleado_del_mes")
+        channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO)
         if not channel:
-            channel = discord.utils.get(self.bot.get_all_channels(), name="empleado")
+            channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO_ALT)
 
         if not channel or not WATCHED_PLAYERS:
             return
@@ -123,9 +124,9 @@ class WeeklyTracker(commands.Cog):
                 await self.announce_weekly_winner()
 
     async def announce_weekly_winner(self):
-        channel = discord.utils.get(self.bot.get_all_channels(), name="empleado_del_mes")
+        channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO)
         if not channel:
-            channel = discord.utils.get(self.bot.get_all_channels(), name="empleado")
+            channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO_ALT)
 
         if not channel or not WATCHED_PLAYERS:
             return

@@ -1,54 +1,35 @@
-import aiohttp
-import discord
 from discord.ext import commands
 
-from config import WATCHED_PLAYERS, PLAYERS_STATE, logger
-from services.tibia_api import fetch_player_data, fetch_world_online_players
-from services.storage import save_data
+from channels import CHANNEL_ONLINES, find_channel
+from config import logger
+from services.discord_utils import move_list_to_bottom
+
 
 class OnlineCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="online")
+    @commands.hybrid_command(name="online", description="Muestra qué personajes monitoreados están conectados")
     async def list_online_members(self, ctx):
+        """Muestra la lista de conectados donde se pide. En #onlines, la mueve al final del canal."""
         logger.info(f"📩 Comando !online ejecutado por {ctx.author}")
+        in_onlines = find_channel([ctx.channel], CHANNEL_ONLINES) is not None
+        await ctx.defer(ephemeral=in_onlines)
 
-        if not WATCHED_PLAYERS:
-            await ctx.send("📋 La lista de seguimiento está vacía.")
+        tracker = self.bot.get_cog("WatchedTracker")
+        if not tracker:
+            await ctx.send("⚠️ El seguimiento de conectados no está activo.")
             return
 
-        await ctx.send("🔍 Verificando qué jugadores de la lista están en línea...")
+        await tracker.update_online_watched_players()
+        if in_onlines:
+            # En #onlines: la lista actualizada se mueve al final del canal
+            await move_list_to_bottom(
+                ctx, self.bot, tracker.watched_embed_message, CHANNEL_ONLINES, tracker.last_online_embeds
+            )
+        else:
+            await ctx.send(embeds=tracker.last_online_embeds)
 
-        online_members = []
-        async with aiohttp.ClientSession() as session:
-            for char_key, data in WATCHED_PLAYERS.items():
-                res = await fetch_player_data(session, data["char_name"])
-                if res and res.get("character_info"):
-                    status = res["character_info"].get("status", "").lower()
-                    if status == "online":
-                        owner = data["owner"]
-                        link = res["tibia_link"]
-                        lvl = res["character_info"].get("level", "N/A")
-                        voc = res["character_info"].get("vocation", "N/A")
-                        
-                        # Actualizar el nivel actual en memoria y guardar en disco
-                        if isinstance(lvl, int):
-                            data["current_level"] = lvl
-                            save_data()
-
-                        online_members.append(f"🟢 {link} (Nivel {lvl} {voc}) - **Dueño:** {owner}")
-
-        if not online_members:
-            await ctx.send("🔴 Ningún jugador de la lista monitoreada está conectado en este momento.")
-            return
-
-        embed = discord.Embed(
-            title="🟢 Jugadores Monitoreados En Línea",
-            description="\n".join(online_members),
-            color=discord.Color.green(),
-        )
-        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(OnlineCommands(bot))

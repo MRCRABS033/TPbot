@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 
 from config import TOKEN, logger
-from services.storage import load_data
+from services.storage import load_data, load_hunteds
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -15,11 +15,30 @@ INITIAL_EXTENSIONS = [
     "cogs.free_tracker",
     "cogs.watched_players",
     "cogs.watched_tracker",
+    "cogs.hunted_tracker",
+    "cogs.panel",
+    "cogs.cleanup",
+    "cogs.commands.add",
+    "cogs.commands.remove",
+    "cogs.commands.list_players",
+    "cogs.commands.whois",
+    "cogs.commands.owner",
+    "cogs.commands.online",
+    "cogs.commands.help",
 ]
+
+
+async def setup_hook():
+    # Registra los comandos de barra (/) en Discord para que aparezcan en el menú
+    synced = await bot.tree.sync()
+    logger.info(f"Comandos de barra sincronizados: {len(synced)}")
+
+bot.setup_hook = setup_hook
 
 async def main():
     # 1. Cargar personajes guardados desde el JSON
     load_data()
+    load_hunteds()
 
     async with bot:
         for extension in INITIAL_EXTENSIONS:
