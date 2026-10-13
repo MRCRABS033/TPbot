@@ -15,7 +15,7 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 import pytz
-from PIL import Image
+from PIL import Image, ImageSequence
 
 from channels import CHANNEL_ANUNCIOS, CHANNEL_BOSSES, find_channel
 from config import WATCHED_PLAYERS, logger
@@ -37,32 +37,82 @@ BOSSES_URL = "https://www.tibia.com/library/?subtopic=boostablebosses"
 
 
 # --- IMAGEN ---
-async def download_boss_image(image_url):
-    """Descarga la imagen del boss y la agranda (PNG). Devuelve bytes o None."""
-    if not image_url:
-        return None
-    try:
-        async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (TPbot)"}) as session:
-            async with session.get(image_url) as response:
-                if response.status != 200:
-                    logger.warning(f"⚠️ HTTP {response.status} al descargar la imagen del boss")
-                    return None
-                data = await response.read()
-        image = Image.open(io.BytesIO(data))
-        if getattr(image, "n_frames", 1) > 1:
-            return data  # Animada: se deja tal cual para no perder la animación
-        image = image.convert("RGBA")
-        image = image.resize((image.width * IMAGE_SCALE, image.height * IMAGE_SCALE), Image.NEAREST)
-        out = io.BytesIO()
-        image.save(out, format="PNG")
-        return out.getvalue()
-    except Exception as e:
-        logger.error(f"❌ Error al preparar la imagen del boss: {e}")
-        return None
+# Fuente principal: TibiaWiki BR (imágenes animadas). static.tibia.com bloquea muchas descargas
+# automáticas (depende del servidor donde corra el bot), así que queda como respaldo.
+WIKI_FILE_URL = "https://www.tibiawiki.com.br/wiki/Special:FilePath/{}"
+_SMALL_WORDS = {"the", "of", "a", "an", "in", "on", "and"}
 
 
-def _image_file(image_bytes):
-    return discord.File(io.BytesIO(image_bytes), filename="boss.png") if image_bytes else None
+def wiki_file_names(boss_name):
+    """
+    Nombres de archivo posibles en TibiaWiki para un boss:
+    'Neferi The Spy' -> Neferi_The_Spy.gif, Neferi_the_Spy.gif (y variantes con guion).
+    """
+    words = boss_name.split()
+    small_lower = [w.lower() if i > 0 and w.lower() in _SMALL_WORDS else w for i, w in enumerate(words)]
+    # 'Many-Headed' -> 'Many-headed' (algunas páginas solo capitalizan la primera parte)
+    hyphen_lower = [w[:1] + w[1:].lower() for w in small_lower]
+    names = ["_".join(words), "_".join(small_lower), "_".join(hyphen_lower)]
+    return [f"{n}.gif" for n in dict.fromkeys(names)]
+
+
+def _upscale(data):
+    """Agranda la imagen sin suavizar (pixel art nítido). Mantiene la animación si la tiene."""
+    image = Image.open(io.BytesIO(data))
+    out = io.BytesIO()
+    if getattr(image, "n_frames", 1) > 1:
+        frames, durations = [], []
+        for frame in ImageSequence.Iterator(image):
+            rgba = frame.convert("RGBA")
+            frames.append(rgba.resize((rgba.width * IMAGE_SCALE, rgba.height * IMAGE_SCALE), Image.NEAREST))
+            durations.append(frame.info.get("duration", 100))
+        frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:],
+                       duration=durations, loop=0, disposal=2)
+        return out.getvalue(), "boss.gif"
+    rgba = image.convert("RGBA")
+    rgba.resize((rgba.width * IMAGE_SCALE, rgba.height * IMAGE_SCALE), Image.NEAREST).save(out, format="PNG")
+    return out.getvalue(), "boss.png"
+
+
+async def download_boss_image(boss):
+    """
+    Descarga la imagen del boss (TibiaWiki BR y, si falla, static.tibia.com) y la agranda.
+    Devuelve (bytes, nombre_de_archivo) o None.
+    """
+    urls = [WIKI_FILE_URL.format(name) for name in wiki_file_names(boss["name"])]
+    if boss.get("image_url"):
+        urls.append(boss["image_url"])
+
+    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (TPbot)"}) as session:
+        for url in urls:
+            try:
+                async with session.get(url) as response:
+                    if response.status != 200 or not response.content_type.startswith("image/"):
+                        continue
+                    data = await response.read()
+                return _upscale(data)
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo usar la imagen {url}: {e}")
+    logger.warning(f"⚠️ No se pudo descargar la imagen de {boss['name']}; Discord la cargará desde la API")
+    return None
+
+
+def boss_media(cog):
+    """(url para el embed, archivo adjunto o None) según la imagen disponible."""
+    if cog and cog.image:
+        data, filename = cog.image
+        return f"attachment://{filename}", discord.File(io.BytesIO(data), filename=filename)
+    if cog and cog.current_boss and cog.current_boss.get("image_url"):
+        # Último recurso: que Discord cargue la imagen directamente desde la API
+        return cog.current_boss["image_url"], None
+    return None, None
+
+
+def _send_kwargs(embed, file, **extra):
+    kwargs = {"embed": embed, **extra}
+    if file:
+        kwargs["file"] = file
+    return kwargs
 
 
 # --- HORA DE LA ACTIVIDAD ---
@@ -100,7 +150,7 @@ def format_activity_time(text):
 
 
 # --- EMBEDS ---
-def build_boss_card(boss, has_image):
+def build_boss_card(boss, image_url):
     embed = discord.Embed(
         title=boss["name"],
         url=BOSSES_URL,
@@ -109,13 +159,13 @@ def build_boss_card(boss, has_image):
         timestamp=discord.utils.utcnow(),
     )
     embed.set_author(name=CARD_MARKER)
-    if has_image:
-        embed.set_image(url="attachment://boss.png")
+    if image_url:
+        embed.set_image(url=image_url)
     embed.set_footer(text="Cambia en cada Server Save (10:00 CET)")
     return embed
 
 
-def build_activity_embed(boss, time_text, note, participants, organizer, has_image):
+def build_activity_embed(boss, time_text, note, participants, organizer, image_url):
     embed = discord.Embed(
         title=f"Actividad en grupo: {boss['name']}",
         url=BOSSES_URL,
@@ -144,8 +194,8 @@ def build_activity_embed(boss, time_text, note, participants, organizer, has_ima
 
     if note:
         embed.add_field(name="Nota", value=note[:1024], inline=False)
-    if has_image:
-        embed.set_thumbnail(url="attachment://boss.png")
+    if image_url:
+        embed.set_thumbnail(url=image_url)
     return embed
 
 
@@ -173,13 +223,10 @@ class ActivityModal(discord.ui.Modal, title="Crear actividad"):
             )
             return
 
-        image = cog.image_bytes if cog else None
+        image_url, file = boss_media(cog)
         embed = build_activity_embed(view.boss, self.time.value, self.note.value, participants,
-                                     interaction.user, bool(image))
-        kwargs = {"embed": embed}
-        if image:
-            kwargs["file"] = _image_file(image)
-        await channel.send(**kwargs)
+                                     interaction.user, image_url)
+        await channel.send(**_send_kwargs(embed, file))
         logger.info(f"📣 Actividad de {view.boss['name']} creada por {interaction.user} "
                     f"({len(participants)} participantes, hora: {self.time.value})")
 
@@ -263,7 +310,7 @@ class BossTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.current_boss = None
-        self.image_bytes = None
+        self.image = None  # (bytes, nombre_de_archivo) de la imagen agrandada del boss
         self.card_message = {}  # { guild_id: id de la tarjeta en #bosses }
         bot.add_view(BossCardView())
         self.update_boss_card.start()
@@ -278,9 +325,13 @@ class BossTracker(commands.Cog):
         if not boss:
             return False
         if self.current_boss and boss["name"] == self.current_boss["name"]:
+            if not self.image:
+                # La imagen falló antes: se reintenta (si ahora funciona, la tarjeta se republica)
+                self.image = await download_boss_image(boss)
+                return self.image is not None
             return False
         self.current_boss = boss
-        self.image_bytes = await download_boss_image(boss.get("image_url"))
+        self.image = await download_boss_image(boss)
         logger.info(f"👑 Boss boosted de hoy: {boss['name']}")
         return True
 
@@ -305,10 +356,11 @@ class BossTracker(commands.Cog):
                 except discord.HTTPException:
                     pass
 
-            kwargs = {"embed": build_boss_card(self.current_boss, bool(self.image_bytes)), "view": BossCardView()}
-            if self.image_bytes:
-                kwargs["file"] = _image_file(self.image_bytes)
-            new_msg = await channel.send(**kwargs, silent=not changed)
+            image_url, file = boss_media(self)
+            new_msg = await channel.send(
+                **_send_kwargs(build_boss_card(self.current_boss, image_url), file, view=BossCardView()),
+                silent=not changed,
+            )
             self.card_message[guild.id] = new_msg.id
 
     @update_boss_card.before_loop
@@ -323,10 +375,8 @@ class BossTracker(commands.Cog):
         if not self.current_boss:
             await ctx.send("⚠️ No se pudo consultar el boss de hoy. Intenta en un momento.")
             return
-        kwargs = {"embed": build_boss_card(self.current_boss, bool(self.image_bytes)), "view": BossCardView()}
-        if self.image_bytes:
-            kwargs["file"] = _image_file(self.image_bytes)
-        await ctx.send(**kwargs)
+        image_url, file = boss_media(self)
+        await ctx.send(**_send_kwargs(build_boss_card(self.current_boss, image_url), file, view=BossCardView()))
 
 
 async def setup(bot):
