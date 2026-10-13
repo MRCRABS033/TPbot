@@ -23,7 +23,7 @@ COMMAND_SECTIONS = {
         ("!free", "Muestra la lista de jugadores free online."),
     ],
     "Administración": [
-        ("!limpiar", "Limpia ahora todos los canales del bot. Solo administradores y desarrolladores."),
+        ("!limpiar", "Limpia ahora todos los canales del bot. Solo administradores, desarrolladores y programadores."),
     ],
     "Hunteds": [
         ("!hunted", "Muestra la lista de hunteds, separados en conectados y desconectados."),
