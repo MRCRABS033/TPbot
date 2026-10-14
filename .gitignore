@@ -1,3 +1,6 @@
 # Archivos compilados de Python
 __pycache__/
 *.pyc
+
+# Copias que deja !restaurar
+*.bak

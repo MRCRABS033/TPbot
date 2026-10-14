@@ -23,10 +23,16 @@ COMMAND_SECTIONS = {
         ("!free", "Muestra la lista de jugadores free online."),
     ],
     "Bosses": [
-        ("!boss", "Muestra el boss boosted de hoy, con el botón para organizarlo en grupo."),
+        ("!boss", "Muestra el boss boosted de hoy con botones para organizarlo en grupo, ver sus habilidades y su loot."),
+    ],
+    "Bazar": [
+        ("!bazaar", "Busca personajes en venta en el Char Bazaar con filtros (vocación, nivel, precio, mundo, PvP)."),
+        ("!ver <código>", "Muestra la ficha completa de un personaje de la última búsqueda del canal."),
     ],
     "Administración": [
         ("!limpiar", "Limpia ahora todos los canales del bot. Solo administradores, desarrolladores y programadores."),
+        ("!respaldo", "Envía una copia de los datos (grupo y hunteds). Úsalo antes de cada despliegue."),
+        ("!restaurar", "Carga un respaldo: adjunta los archivos .json al mensaje."),
     ],
     "Hunteds": [
         ("!hunted", "Muestra la lista de hunteds, separados en conectados y desconectados."),

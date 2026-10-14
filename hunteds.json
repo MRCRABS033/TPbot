@@ -7,5 +7,68 @@
         "vocation": "Royal Paladin",
         "added_by": "valen_pl",
         "last_death_time": "2026-10-10T00:01:18Z"
+    },
+    "laagman": {
+        "char_name": "Laagman",
+        "tibia_link": "[Laagman](https://www.tibia.com/community/?subtopic=characters&name=laagman)",
+        "world": "Quidera",
+        "level": 300,
+        "vocation": "Exalted Monk",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-09T19:21:39Z"
+    },
+    "spattz": {
+        "char_name": "Spattz",
+        "tibia_link": "[Spattz](https://www.tibia.com/community/?subtopic=characters&name=spattz)",
+        "world": "Quidera",
+        "level": 237,
+        "vocation": "Master Sorcerer",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-12T22:55:40Z"
+    },
+    "grotesto": {
+        "char_name": "Grotesto",
+        "tibia_link": "[Grotesto](https://www.tibia.com/community/?subtopic=characters&name=grotesto)",
+        "world": "Quidera",
+        "level": 643,
+        "vocation": "Royal Paladin",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-13T19:14:37Z"
+    },
+    "rafa motorraton": {
+        "char_name": "Rafa Motorraton",
+        "tibia_link": "[Rafa Motorraton](https://www.tibia.com/community/?subtopic=characters&name=rafa+motorraton)",
+        "world": "Quidera",
+        "level": 432,
+        "vocation": "Royal Paladin",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-03T19:46:09Z"
+    },
+    "froszhinho": {
+        "char_name": "Froszhinho",
+        "tibia_link": "[Froszhinho](https://www.tibia.com/community/?subtopic=characters&name=froszhinho)",
+        "world": "Quidera",
+        "level": 396,
+        "vocation": "Royal Paladin",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-13T21:25:35Z"
+    },
+    "bonitoman": {
+        "char_name": "Bonitoman",
+        "tibia_link": "[Bonitoman](https://www.tibia.com/community/?subtopic=characters&name=bonitoman)",
+        "world": "Quidera",
+        "level": 351,
+        "vocation": "Elder Druid",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-10T18:23:15Z"
+    },
+    "king ak": {
+        "char_name": "King Ak",
+        "tibia_link": "[King Ak](https://www.tibia.com/community/?subtopic=characters&name=king+ak)",
+        "world": "Quidera",
+        "level": 280,
+        "vocation": "Elite Knight",
+        "added_by": "importado del servidor",
+        "last_death_time": "2026-10-09T18:06:42Z"
     }
 }
