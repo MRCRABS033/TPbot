@@ -11,22 +11,21 @@ import asyncio
 import io
 import time
 
-import aiohttp
 import discord
 import tibiapy
 import tibiapy.errors
+from aiohttp_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
 from discord import app_commands
 from discord.ext import commands, tasks
 from PIL import Image
 
 from channels import CHANNEL_BAZAAR, find_channel
-from config import logger
+from config import BAZAAR_PROXY_URL, logger
 from constants.bazaar import (
     AUCTION_URL,
     BAZAAR_URL,
     IMAGE_CACHE_SECONDS,
     PAGE_LOAD_TIMEOUT,
-    REQUEST_TIMEOUT,
     MAX_PAGES_FOR_PRICE_FILTER,
     ORDER_OPTIONS,
     PVP_OPTIONS,
@@ -38,6 +37,7 @@ from services.bazaar import (
     BazaarFilters,
     BazaarSearch,
     TooManyResults,
+    create_session,
     download_outfits,
     enum_text,
     fetch_auction_details,
@@ -189,6 +189,8 @@ def describe_error(error):
     if isinstance(error, tibiapy.errors.ForbiddenError):
         return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403). "
                 "No es un problema de los filtros: el hosting necesita otra IP o un proxy.")
+    if isinstance(error, (ProxyError, ProxyConnectionError, ProxyTimeoutError)):
+        return "no se pudo conectar con el proxy configurado (BAZAAR_PROXY_URL). Revisa que esté activo."
     if isinstance(error, tibiapy.errors.SiteMaintenanceError):
         return "tibia.com está en mantenimiento. Intenta más tarde."
     if isinstance(error, tibiapy.errors.NetworkError):
@@ -569,8 +571,10 @@ class Bazaar(commands.Cog):
         bot.add_view(BazaarPanelView())
 
     async def cog_load(self):
-        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT))
-        self.client = tibiapy.Client(session=session)
+        # Con sesión propia: tiempo límite por petición y, si está configurado, el proxy
+        self.client = tibiapy.Client(session=create_session())
+        if BAZAAR_PROXY_URL:
+            logger.info("🛒 Bazaar: las consultas a tibia.com saldrán por el proxy configurado")
         self.keep_panel.start()
 
     async def cog_unload(self):

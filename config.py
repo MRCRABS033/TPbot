@@ -27,3 +27,8 @@ WORLD = "Quidera"
 
 # Nombre del team (se muestra en las gráficas)
 TEAM_NAME = "Tres Puntos"
+
+# --- PROXY PARA EL CHAR BAZAAR (opcional) ---
+# tibia.com bloquea las IPs de muchos hostings (error 403). Si se define, las consultas al bazaar
+# salen por este proxy. Formatos: http://usuario:clave@host:puerto  o  socks5://usuario:clave@host:puerto
+BAZAAR_PROXY_URL = os.getenv("BAZAAR_PROXY_URL") or None
