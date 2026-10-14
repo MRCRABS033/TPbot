@@ -404,6 +404,10 @@ class BossCardView(discord.ui.View):
         )
 
 
+# custom_id de los botones de la tarjeta actual (para detectar tarjetas de versiones anteriores)
+CARD_BUTTON_IDS = {"boss:group", "boss:abilities", "boss:loot"}
+
+
 # --- COG ---
 class BossTracker(commands.Cog):
     def __init__(self, bot):
@@ -461,8 +465,11 @@ class BossTracker(commands.Cog):
             card_image = (msg.embeds[0].image.url or "") if msg and msg.embeds else ""
             image_fixed = (refreshed and not new_boss and card_boss is not None and self.image is not None
                            and "discordapp" not in card_image)
-            if msg and not new_boss and is_last and not image_fixed:
-                continue  # Misma tarjeta y al final del canal: no hay nada que hacer
+            # ¿La tarjeta es de una versión anterior del bot (otros botones)? Se reemplaza por la actual
+            card_buttons = {c.custom_id for row in (msg.components if msg else []) for c in row.children}
+            outdated = msg is not None and card_buttons != CARD_BUTTON_IDS
+            if msg and not new_boss and is_last and not image_fixed and not outdated:
+                continue  # Misma tarjeta, al día y al final del canal: no hay nada que hacer
 
             if msg:
                 try:
