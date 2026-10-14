@@ -187,8 +187,11 @@ def describe_error(error):
     if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
         return "tibia.com tardó demasiado en responder. Intenta de nuevo en un momento."
     if isinstance(error, tibiapy.errors.ForbiddenError):
-        return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403). "
-                "No es un problema de los filtros: el hosting necesita otra IP o un proxy.")
+        if BAZAAR_PROXY_URL:
+            return ("tibia.com bloqueó la conexión (error 403) **aunque se usó el proxy**. "
+                    "Puede ser una IP del proxy bloqueada: intenta de nuevo; si sigue, revisa el proxy.")
+        return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403) y **no hay "
+                "proxy configurado**: el bot no encontró la variable BAZAAR_PROXY_URL.")
     if isinstance(error, (ProxyError, ProxyConnectionError, ProxyTimeoutError)):
         return "no se pudo conectar con el proxy configurado (BAZAAR_PROXY_URL). Revisa que esté activo."
     if isinstance(error, tibiapy.errors.SiteMaintenanceError):
