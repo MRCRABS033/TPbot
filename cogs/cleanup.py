@@ -11,7 +11,6 @@ from discord.ext import commands, tasks
 from channels import (
     CHANNEL_BAZAAR,
     CHANNEL_BOSSES,
-    CHANNEL_DEATHS,
     CHANNEL_EMPLEADO,
     CHANNEL_EMPLEADO_ALT,
     CHANNEL_FREES,
@@ -35,6 +34,7 @@ CLEANUP_TIMES = [time(hour=0, minute=0, tzinfo=CLEANUP_TZ), time(hour=12, minute
 # diario, que se publica a la misma hora que la limpieza)
 RECENT_GRACE = timedelta(minutes=2)
 
+# #cementerio no se limpia: el historial de muertes se conserva.
 # (canales, cog que mantiene los mensajes que se conservan, atributos con el id de esos mensajes por servidor)
 CHANNELS_TO_CLEAN = [
     ([CHANNEL_TPBOT], "Panel", ["group_list_message"]),
@@ -44,7 +44,6 @@ CHANNELS_TO_CLEAN = [
     ([CHANNEL_BOSSES], "BossTracker", ["card_message"]),
     ([CHANNEL_BAZAAR], "Bazaar", ["panel_message"]),
     ([CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT], "WatchedPlayers", ["ranking_messages", "winner_messages"]),
-    ([CHANNEL_DEATHS], None, []),
     ([CHANNEL_LEVEL, CHANNEL_LEVEL_ALT], None, []),
 ]
 

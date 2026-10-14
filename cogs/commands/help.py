@@ -6,7 +6,7 @@ from config import logger
 # (comando, descripción) por sección. Mantener actualizado al agregar comandos nuevos.
 COMMAND_SECTIONS = {
     "Panel": [
-        ("!panel", "Vuelve a poner el panel del grupo al final de #tpbot. Los canales del bot se limpian solos cada 12 horas."),
+        ("!panel", "Vuelve a poner el panel del grupo al final de #tpbot. Los canales del bot se limpian solos cada 12 horas (menos #cementerio)."),
     ],
     "Personajes": [
         ("!add <dueño> <personaje>", "Agrega un personaje a la lista de monitoreo."),
@@ -30,7 +30,7 @@ COMMAND_SECTIONS = {
         ("!ver <código>", "Muestra la ficha completa de un personaje de la última búsqueda del canal."),
     ],
     "Administración": [
-        ("!limpiar", "Limpia ahora todos los canales del bot. Solo administradores, desarrolladores y programadores."),
+        ("!limpiar", "Limpia ahora todos los canales del bot (menos #cementerio). Solo administradores, desarrolladores y programadores."),
         ("!respaldo", "Envía una copia de los datos (grupo y hunteds). Úsalo antes de cada despliegue."),
         ("!restaurar", "Carga un respaldo: adjunta los archivos .json al mensaje."),
     ],

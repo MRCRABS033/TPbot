@@ -31,5 +31,5 @@ TEAM_NAME = "Tres Puntos"
 # --- PROXY PARA EL CHAR BAZAAR (opcional) ---
 # tibia.com bloquea las IPs de muchos hostings (error 403). Si se define, las consultas al bazaar
 # salen por este proxy. Formatos: http://usuario:clave@host:puerto  o  socks5://usuario:clave@host:puerto
-# Se quitan espacios y saltos de línea (por si la dirección se pegó partida en varias líneas)
-BAZAAR_PROXY_URL = "".join((os.getenv("BAZAAR_PROXY_URL") or "").split()) or None
+# Se quitan espacios, saltos de línea y comillas (por si la dirección se pegó partida o entre comillas)
+BAZAAR_PROXY_URL = "".join((os.getenv("BAZAAR_PROXY_URL") or "").split()).strip("\"'") or None

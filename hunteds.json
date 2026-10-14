@@ -3,7 +3,7 @@
         "char_name": "Luvi Amyce",
         "tibia_link": "[Luvi Amyce](https://www.tibia.com/community/?subtopic=characters&name=luvi+amyce)",
         "world": "Quidera",
-        "level": 57,
+        "level": 58,
         "vocation": "Royal Paladin",
         "added_by": "valen_pl",
         "last_death_time": "2026-10-10T00:01:18Z"
@@ -12,7 +12,7 @@
         "char_name": "Laagman",
         "tibia_link": "[Laagman](https://www.tibia.com/community/?subtopic=characters&name=laagman)",
         "world": "Quidera",
-        "level": 300,
+        "level": 302,
         "vocation": "Exalted Monk",
         "added_by": "importado del servidor",
         "last_death_time": "2026-10-09T19:21:39Z"
@@ -21,7 +21,7 @@
         "char_name": "Spattz",
         "tibia_link": "[Spattz](https://www.tibia.com/community/?subtopic=characters&name=spattz)",
         "world": "Quidera",
-        "level": 237,
+        "level": 240,
         "vocation": "Master Sorcerer",
         "added_by": "importado del servidor",
         "last_death_time": "2026-10-12T22:55:40Z"
@@ -70,5 +70,14 @@
         "vocation": "Elite Knight",
         "added_by": "importado del servidor",
         "last_death_time": "2026-10-09T18:06:42Z"
+    },
+    "warrgrriff": {
+        "char_name": "Warrgrriff",
+        "tibia_link": "[Warrgrriff](https://www.tibia.com/community/?subtopic=characters&name=warrgrriff)",
+        "world": "Quidera",
+        "level": 430,
+        "vocation": "Elder Druid",
+        "added_by": "chep3p3man",
+        "last_death_time": "2026-10-13T21:48:55Z"
     }
 }

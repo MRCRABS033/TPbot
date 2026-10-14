@@ -43,7 +43,13 @@ def create_session():
     Sesión HTTP para todo lo del bazaar (listado, fichas e imágenes): con tiempo límite y, si está
     configurado BAZAAR_PROXY_URL, saliendo por el proxy (tibia.com bloquea muchas IPs de hosting).
     """
-    connector = ProxyConnector.from_url(BAZAAR_PROXY_URL) if BAZAAR_PROXY_URL else None
+    connector = None
+    if BAZAAR_PROXY_URL:
+        try:
+            connector = ProxyConnector.from_url(BAZAAR_PROXY_URL)
+        except ValueError as e:
+            logger.error(f"❌ BAZAAR_PROXY_URL no es una dirección válida ({e}). Formato esperado: "
+                         f"http://usuario:clave@host:puerto (sin comillas). El bazaar seguirá SIN proxy.")
     return aiohttp.ClientSession(headers=HEADERS, connector=connector,
                                  timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT))
 # Skills que se muestran en la ficha (la página también trae bonus de tareas que no interesan)
