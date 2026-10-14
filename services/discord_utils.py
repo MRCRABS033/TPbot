@@ -1,7 +1,7 @@
 import discord
 from channels import find_channel
 from config import logger
-from services.vocation_thumbnails import ATTACHMENT_PREFIX, thumbnail_files
+from services.vocation_thumbnails import THUMBNAIL_FILE_PREFIX, thumbnail_files
 
 # Cuántos mensajes recientes se revisan al buscar la lista que el bot publicó antes de reiniciarse
 HISTORY_LOOKUP_LIMIT = 30
@@ -12,26 +12,6 @@ def _embed_marker(embed: discord.Embed):
     marker = (embed.author.name if embed.author else None) or embed.title
     # Sin el relleno de espacios invisibles que se usa para dar ancho a los recuadros
     return marker.rstrip("⠀ ") if marker else marker
-
-
-def _reuse_uploaded_thumbnails(msg, embeds):
-    uploaded = {}
-    for old in msg.embeds:
-        url = old.thumbnail.url if old.thumbnail else None
-        if url:
-            uploaded[url.split("?")[0].rsplit("/", 1)[-1]] = url
-
-    result = []
-    for embed in embeds:
-        url = embed.thumbnail.url if embed.thumbnail else None
-        if url and url.startswith(ATTACHMENT_PREFIX):
-            name = url[len(ATTACHMENT_PREFIX):]
-            if name not in uploaded:
-                return None
-            embed = embed.copy()
-            embed.set_thumbnail(url=uploaded[name])
-        result.append(embed)
-    return result
 
 
 async def _get_previous_message(bot, channel, message_cache, guild_id, marker):
@@ -83,12 +63,14 @@ async def send_or_update_embed(bot: discord.Client, message_cache: dict, channel
             msg = None
         if msg:
             try:
-                reused = _reuse_uploaded_thumbnails(msg, embeds)
-                if reused is not None:
-                    # Las imágenes ya están subidas en el mensaje: no se vuelven a subir
-                    await msg.edit(embeds=reused, view=view)
+                files = thumbnail_files(embeds)
+                if files or any(a.filename.startswith(THUMBNAIL_FILE_PREFIX) for a in msg.attachments):
+                    # Las miniaturas se adjuntan de nuevo en cada edición (reemplazan a las anteriores).
+                    # Si un embed apunta a la URL ya subida en vez de attachment://, Discord muestra
+                    # los adjuntos como imágenes sueltas encima de la lista.
+                    await msg.edit(embeds=embeds, view=view, attachments=files)
                 else:
-                    await msg.edit(embeds=embeds, view=view, attachments=thumbnail_files(embeds))
+                    await msg.edit(embeds=embeds, view=view)
                 continue
             except discord.NotFound:
                 logger.warning(f"Mensaje previo en #{channel_name} ({guild.name}) no existe. Se enviará uno nuevo.")
