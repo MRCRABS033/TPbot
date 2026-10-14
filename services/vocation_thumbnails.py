@@ -17,6 +17,7 @@ from services.tibia_wiki import VOCATION_OUTFITS, fetch_wiki_image, vocation_ima
 
 THUMBNAIL_MAX_SIZE = 80  # Discord muestra las miniaturas a 80x80 como máximo
 ATTACHMENT_PREFIX = "attachment://"
+THUMBNAIL_FILE_PREFIX = "voc_"  # Nombre de los adjuntos: voc_knight.gif, ...
 
 logger = logging.getLogger("TibiaBot")
 
@@ -24,7 +25,7 @@ _thumbnails = {}  # { vocación: bytes del GIF ampliado }
 
 
 def _file_name(key):
-    return f"voc_{key}.gif"
+    return f"{THUMBNAIL_FILE_PREFIX}{key}.gif"
 
 
 def _enlarge(gif_bytes):
@@ -87,7 +88,7 @@ def thumbnail_files(embeds):
         url = embed.thumbnail.url if embed.thumbnail else None
         if url and url.startswith(ATTACHMENT_PREFIX):
             name = url[len(ATTACHMENT_PREFIX):]
-            key = name[len("voc_"):-len(".gif")]
+            key = name[len(THUMBNAIL_FILE_PREFIX):-len(".gif")]
             if key in _thumbnails:
                 files.append(discord.File(io.BytesIO(_thumbnails[key]), filename=name))
     return files
