@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands, tasks
 
 from channels import (
+    CHANNEL_BAZAAR,
     CHANNEL_BOSSES,
     CHANNEL_DEATHS,
     CHANNEL_EMPLEADO,
@@ -19,23 +20,16 @@ from channels import (
     CHANNEL_LEVEL_ALT,
     CHANNEL_ONLINES,
     CHANNEL_TPBOT,
-    _normalize,
     find_channel,
 )
 from config import logger
+from constants.roles import NO_PERMISSION_MESSAGE
+from services.permissions import is_bot_admin
 from services.task_utils import resilient
 
 # Todos los días a las 12:00 a. m. y 12:00 p. m. (hora de Colombia, UTC-5)
 CLEANUP_TZ = timezone(timedelta(hours=-5))
 CLEANUP_TIMES = [time(hour=0, minute=0, tzinfo=CLEANUP_TZ), time(hour=12, minute=0, tzinfo=CLEANUP_TZ)]
-
-# Roles que pueden usar !limpiar (además de los administradores del servidor). Se ignoran
-# mayúsculas e íconos del nombre del rol.
-CLEANUP_ROLES = {
-    "desarrollador", "desarrolladores", "developer", "developers", "dev", "devs",
-    "programador", "programadores", "programadora", "programadoras",
-    "admin", "admins", "administrador", "administradores", "administradora", "administradoras", "administrator",
-}
 
 # No se borran los mensajes publicados en los últimos minutos (por ejemplo, el ranking
 # diario, que se publica a la misma hora que la limpieza)
@@ -48,6 +42,7 @@ CHANNELS_TO_CLEAN = [
     ([CHANNEL_FREES], "FreeTracker", ["free_embed_message"]),
     ([CHANNEL_HUNTEDS], "HuntedTracker", ["list_message"]),
     ([CHANNEL_BOSSES], "BossTracker", ["card_message"]),
+    ([CHANNEL_BAZAAR], "Bazaar", ["panel_message"]),
     ([CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT], "WatchedPlayers", ["ranking_messages", "winner_messages"]),
     ([CHANNEL_DEATHS], None, []),
     ([CHANNEL_LEVEL, CHANNEL_LEVEL_ALT], None, []),
@@ -98,19 +93,11 @@ class Cleanup(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- COMANDO MANUAL (solo administradores y desarrolladores) ---
-    @staticmethod
-    def _can_clean(ctx):
-        if not ctx.guild:
-            return False
-        if ctx.author.guild_permissions.administrator:
-            return True
-        return any(_normalize(role.name) in CLEANUP_ROLES for role in ctx.author.roles)
-
     @commands.hybrid_command(name="limpiar", description="Limpia ahora todos los canales del bot (solo admins, desarrolladores y programadores)")
     async def clean_command(self, ctx):
-        if not self._can_clean(ctx):
+        if not is_bot_admin(ctx):
             logger.warning(f"⛔ {ctx.author} intentó usar !limpiar sin permiso")
-            await ctx.send("⛔ Solo los administradores, desarrolladores y programadores pueden usar este comando.", ephemeral=True)
+            await ctx.send(NO_PERMISSION_MESSAGE, ephemeral=True)
             return
 
         logger.info(f"📩 Comando !limpiar ejecutado por {ctx.author}")

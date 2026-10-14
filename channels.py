@@ -31,6 +31,9 @@ CHANNEL_BOSSES = "bosses"
 # Anuncios de las actividades en grupo creadas desde #bosses
 CHANNEL_ANUNCIOS = "anuncios"
 
+# Catálogo del Char Bazaar de tibia.com con filtros y fichas detalladas (bazaar)
+CHANNEL_BAZAAR = "bazaar"
+
 
 # --- BÚSQUEDA DE CANALES ---
 def _normalize(name: str) -> str:

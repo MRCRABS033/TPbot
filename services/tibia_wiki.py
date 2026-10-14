@@ -1,5 +1,4 @@
 import logging
-import re
 
 logger = logging.getLogger("TibiaBot")
 
@@ -70,42 +69,6 @@ async def fetch_wiki_image(session, file_name: str):
     return image
 
 
-# --- INFORMACIÓN DE BOSSES (TibiaWiki en inglés, vía su API de texto) ---
-FANDOM_API = "https://tibia.fandom.com/api.php"
-BOSS_INFO_FIELDS = ("hp", "exp", "location", "bosstiaryclass", "cooldown")
-_boss_info_cache = {}  # { nombre: dict | None }
-
-
-def _mapper_link(params):
-    """{{Mapper Coords|text=aquí|132.94|122.246|6|...}} -> enlace al mapa de tibiamaps.io."""
-    parts = params.split("|")
-    text = next((p.split("=", 1)[1] for p in parts if p.startswith("text=")), "mapa")
-    coords = [p for p in parts if "=" not in p]
-    try:
-        # Formato de TibiaWiki: "sector.posición" (256 posiciones por sector)
-        x_sector, x_pos = coords[0].split(".")
-        y_sector, y_pos = coords[1].split(".")
-        x, y, z = int(x_sector) * 256 + int(x_pos), int(y_sector) * 256 + int(y_pos), int(coords[2])
-        return f"[{text}](https://tibiamaps.io/map#{x},{y},{z}:2)"
-    except (IndexError, ValueError):
-        return text
-
-
-def clean_wikitext(text):
-    """Convierte el texto de la wiki en texto de Discord: enlaces internos -> texto, mapas -> enlace."""
-    text = re.sub(r"\{\{Mapper Coords\|([^{}]*)\}\}", lambda m: _mapper_link(m.group(1)), text)
-    text = re.sub(r"\{\{[^{}]*\}\}", "", text)                       # Otras plantillas
-    text = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", text)     # [[Página|texto]] -> texto
-    text = re.sub(r"<[^>]+>", " ", text)                             # Etiquetas HTML
-    text = re.sub(r"\s+", " ", text).strip(" ,.;")
-    return text
-
-
-def _wiki_page_names(boss_name):
-    names = [n[:-4] for n in wiki_file_names_for(boss_name)]
-    return list(dict.fromkeys(names))
-
-
 def wiki_file_names_for(boss_name):
     """Variantes del nombre como en TibiaWiki ('Neferi The Spy' -> Neferi_The_Spy.gif, Neferi_the_Spy.gif...)."""
     words = boss_name.split()
@@ -113,39 +76,3 @@ def wiki_file_names_for(boss_name):
     hyphen_lower = [w[:1] + w[1:].lower() for w in small_lower]
     names = ["_".join(words), "_".join(small_lower), "_".join(hyphen_lower)]
     return [f"{n}.gif" for n in dict.fromkeys(names)]
-
-
-async def fetch_boss_info(session, boss_name):
-    """
-    Datos del boss desde TibiaWiki: {"hp", "exp", "location", "bosstiaryclass", "cooldown"}.
-    Devuelve None si no se encuentra. Se guarda en memoria (cambia muy poco).
-    """
-    if boss_name in _boss_info_cache:
-        return _boss_info_cache[boss_name]
-
-    for page in _wiki_page_names(boss_name):
-        params = {"action": "parse", "page": page, "prop": "wikitext", "format": "json", "redirects": 1}
-        try:
-            async with session.get(FANDOM_API, params=params, headers=WIKI_HEADERS) as response:
-                if response.status != 200:
-                    continue
-                data = await response.json(content_type=None)
-        except Exception as e:
-            logger.warning(f"⚠️ Error al consultar TibiaWiki para {boss_name}: {e}")
-            return None  # No se cachea: se reintenta la próxima vez
-        wikitext = data.get("parse", {}).get("wikitext", {}).get("*")
-        if not wikitext or "{{Infobox Creature" not in wikitext:
-            continue
-
-        info = {}
-        for field in BOSS_INFO_FIELDS:
-            match = re.search(rf"^\|\s*{field}\s*=\s*(.*)$", wikitext, re.M)
-            if match:
-                value = clean_wikitext(match.group(1))
-                if value and value not in ("?", "--"):
-                    info[field] = value
-        _boss_info_cache[boss_name] = info
-        return info
-
-    _boss_info_cache[boss_name] = None
-    return None

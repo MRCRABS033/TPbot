@@ -23,7 +23,8 @@ from services.discord_utils import _get_previous_message
 from services.online_embeds import player_url
 from services.task_utils import resilient
 from services.tibia_api import fetch_boosted_boss
-from services.tibia_wiki import fetch_boss_info, wiki_file_names_for
+from services.boss_info import fetch_boss_info
+from services.tibia_wiki import wiki_file_names_for
 
 # La hora que se escribe al crear la actividad se interpreta en hora de México (Ciudad de México).
 # Discord no informa la zona horaria de cada usuario; en el anuncio cada quien la ve en su hora local.
@@ -157,6 +158,8 @@ def add_boss_info_fields(embed, info, with_location=True):
         embed.add_field(name="Cooldown", value=f"{info['cooldown']} h", inline=True)
     if with_location and info.get("location"):
         embed.add_field(name="Zona", value=info["location"][:1024], inline=False)
+    if with_location and info.get("notes"):
+        embed.add_field(name="Notas", value=info["notes"][:1024], inline=False)
 
 
 def build_boss_card(boss, image_url, info=None):
@@ -172,6 +175,64 @@ def build_boss_card(boss, image_url, info=None):
     if image_url:
         embed.set_image(url=image_url)
     embed.set_footer(text="Cambia en cada Server Save (10:00 CET)")
+    return embed
+
+
+def _add_list_fields(embed, title, items, separator="\n"):
+    """Agrega una lista en uno o más campos (límite de Discord: 1024 caracteres por campo)."""
+    chunk = []
+    for item in items:
+        if len(separator.join(chunk + [item])) > 1020:
+            embed.add_field(name=title, value=separator.join(chunk), inline=False)
+            chunk, title = [], "\u200b"
+        chunk.append(item)
+    if chunk:
+        embed.add_field(name=title, value=separator.join(chunk), inline=False)
+
+
+def _no_info(embed):
+    embed.description = "No se encontró información de este boss en TibiaWiki."
+    return embed
+
+
+def build_abilities_embed(boss, info, image_url):
+    embed = discord.Embed(title=f"{boss['name']} · Habilidades y debilidades", url=BOSSES_URL, color=BOSS_COLOR)
+    if image_url:
+        embed.set_thumbnail(url=image_url)
+    embed.set_footer(text="Fuente: TibiaWiki")
+    if not info:
+        return _no_info(embed)
+
+    if info.get("max_damage"):
+        embed.add_field(name="Daño máximo", value=info["max_damage"], inline=False)
+    if info.get("abilities"):
+        _add_list_fields(embed, "Habilidades", [f"• {a}" for a in info["abilities"]])
+    else:
+        embed.add_field(name="Habilidades", value="TibiaWiki no tiene sus habilidades registradas.", inline=False)
+    embed.add_field(name="Débil a", value=", ".join(info.get("weak") or []) or "—", inline=True)
+    embed.add_field(name="Resiste", value=", ".join(info.get("strong") or []) or "—", inline=True)
+    embed.add_field(name="Inmune a", value=", ".join(info.get("immune") or []) or "—", inline=True)
+    if info.get("heals"):
+        embed.add_field(name="Se cura con", value=", ".join(info["heals"]), inline=False)
+    if info.get("traits"):
+        _add_list_fields(embed, "Rasgos", [f"• {t}" for t in info["traits"]])
+    return embed
+
+
+def build_loot_embed(boss, info, image_url):
+    embed = discord.Embed(title=f"{boss['name']} · Loot", url=BOSSES_URL, color=BOSS_COLOR)
+    if image_url:
+        embed.set_thumbnail(url=image_url)
+    embed.set_footer(text="Fuente: TibiaWiki")
+    if not info:
+        return _no_info(embed)
+    if not info.get("loot"):
+        embed.description = "TibiaWiki no tiene la lista de loot de este boss."
+        return embed
+    total = sum(len(items) for items in info["loot"].values())
+    embed.description = f"{total} objetos posibles."
+    for rarity, items in info["loot"].items():
+        _add_list_fields(embed, f"{rarity} · {len(items)}", items, separator=", ")
     return embed
 
 
@@ -316,6 +377,32 @@ class BossCardView(discord.ui.View):
             ephemeral=True,
         )
 
+    @discord.ui.button(label="◆  Habilidades y debilidades", style=discord.ButtonStyle.secondary,
+                       custom_id="boss:abilities")
+    async def abilities(self, interaction: discord.Interaction, button):
+        await self._send_info(interaction, build_abilities_embed)
+
+    @discord.ui.button(label="◇  Loot", style=discord.ButtonStyle.secondary, custom_id="boss:loot")
+    async def loot(self, interaction: discord.Interaction, button):
+        await self._send_info(interaction, build_loot_embed)
+
+    @staticmethod
+    async def _send_info(interaction, build_embed):
+        """Responde solo a quien pulsó el botón, con la información del boss de hoy."""
+        cog = interaction.client.get_cog("BossTracker")
+        if not cog or not cog.current_boss:
+            await interaction.response.send_message("⚠️ Aún no se conoce el boss de hoy. Intenta en un momento.",
+                                                    ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if cog.boss_info is None:
+            async with aiohttp.ClientSession() as session:
+                cog.boss_info = await fetch_boss_info(session, cog.current_boss["name"])
+        image_url, file = boss_media(cog)
+        await interaction.followup.send(
+            **_send_kwargs(build_embed(cog.current_boss, cog.boss_info, image_url), file), ephemeral=True
+        )
+
 
 # --- COG ---
 class BossTracker(commands.Cog):
@@ -332,7 +419,7 @@ class BossTracker(commands.Cog):
         self.update_boss_card.cancel()
 
     async def _refresh_boss(self):
-        """Consulta el boss del día. Devuelve True si cambió."""
+        """Consulta el boss del día. Devuelve True si cambió (o si se consiguió la imagen que faltaba)."""
         async with aiohttp.ClientSession() as session:
             boss = await fetch_boosted_boss(session)
         if not boss:
@@ -353,7 +440,8 @@ class BossTracker(commands.Cog):
     @resilient
     @tasks.loop(minutes=5)
     async def update_boss_card(self):
-        changed = await self._refresh_boss()
+        # True si cambió el boss o si se consiguió la imagen que antes falló
+        refreshed = await self._refresh_boss()
         if not self.current_boss:
             return
 
@@ -362,22 +450,34 @@ class BossTracker(commands.Cog):
             if not channel:
                 continue
             msg = await _get_previous_message(self.bot, channel, self.card_message, guild.id, CARD_MARKER)
-            # Se vuelve a publicar si cambió el boss, si no existe o si ya no es el último mensaje
-            if msg and not changed and channel.last_message_id == msg.id:
-                continue
+
+            # Se compara con la tarjeta que ya está en el canal (no con la memoria del bot), así un
+            # reinicio no cuenta como "boss nuevo" ni vuelve a publicar la misma tarjeta
+            card_boss = msg.embeds[0].title if msg and msg.embeds else None
+            new_boss = card_boss != self.current_boss["name"]
+            is_last = msg is not None and channel.last_message_id == msg.id
+            # ¿La tarjeta salió sin imagen propia y ahora sí la tenemos? (la imagen del embed queda en el CDN de
+            # Discord; ojo: msg.attachments viene vacío cuando el archivo se usa dentro del embed)
+            card_image = (msg.embeds[0].image.url or "") if msg and msg.embeds else ""
+            image_fixed = (refreshed and not new_boss and card_boss is not None and self.image is not None
+                           and "discordapp" not in card_image)
+            if msg and not new_boss and is_last and not image_fixed:
+                continue  # Misma tarjeta y al final del canal: no hay nada que hacer
+
             if msg:
                 try:
                     await msg.delete()
                 except discord.HTTPException:
                     pass
-
             image_url, file = boss_media(self)
             new_msg = await channel.send(
                 **_send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
                                view=BossCardView()),
-                silent=not changed,
+                silent=not new_boss,  # Solo notifica cuando hay un boss nuevo
             )
             self.card_message[guild.id] = new_msg.id
+            if new_boss:
+                logger.info(f"👑 Tarjeta del boss {self.current_boss['name']} publicada en {guild.name}")
 
     @update_boss_card.before_loop
     async def before_update(self):
