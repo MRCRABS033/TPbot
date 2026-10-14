@@ -14,6 +14,7 @@ import time
 import aiohttp
 import discord
 import tibiapy
+import tibiapy.errors
 from discord import app_commands
 from discord.ext import commands, tasks
 from PIL import Image
@@ -179,6 +180,20 @@ async def send_details(send, search, code_text, ephemeral):
         buffer.seek(0)
         kwargs["file"] = discord.File(buffer, filename="outfit.png")
     await send(**kwargs)
+
+
+def describe_error(error):
+    """Explicación corta del fallo al consultar tibia.com (se muestra a quien buscó)."""
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+        return "tibia.com tardó demasiado en responder. Intenta de nuevo en un momento."
+    if isinstance(error, tibiapy.errors.ForbiddenError):
+        return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403). "
+                "No es un problema de los filtros: el hosting necesita otra IP o un proxy.")
+    if isinstance(error, tibiapy.errors.SiteMaintenanceError):
+        return "tibia.com está en mantenimiento. Intenta más tarde."
+    if isinstance(error, tibiapy.errors.NetworkError):
+        return f"error de conexión con tibia.com ({error}). Intenta de nuevo en un momento."
+    return f"error inesperado ({type(error).__name__}). Intenta de nuevo en un momento."
 
 
 # --- CATÁLOGO (RESULTADOS) ---
@@ -610,8 +625,8 @@ class Bazaar(commands.Cog):
             return (f"⚠️ Hay **{e.results:,}** subastas con estos filtros. Para filtrar por precio la búsqueda "
                     f"debe tener como máximo **{limit}**: acótala con vocación, nivel o mundo.").replace(",", ".")
         except Exception as e:
-            logger.error(f"❌ Error al buscar en el bazaar: {e}")
-            return "⚠️ No se pudo consultar el bazaar de tibia.com. Intenta de nuevo en un momento."
+            logger.error(f"❌ Error al buscar en el bazaar: {e!r}")
+            return f"⚠️ No se pudo consultar el bazaar de tibia.com: {describe_error(e)}"
         if not embed:
             return f"No se encontraron subastas con estos filtros: {filters.describe()}"
 
