@@ -9,7 +9,8 @@ from cogs.death_tracker import DeathTracker
 from cogs.panel import HuntedPanelView
 from config import HUNTED_PLAYERS, WORLD, logger
 from services.task_utils import resilient
-from services.discord_utils import broadcast_embed, repost_embed, send_or_update_embed
+from services.discord_utils import broadcast_embed, send_or_update_embed
+from services.login_times import LoginTracker, parse_api_time
 from services.online_embeds import build_grouped_online_embeds, player_url
 from services.roster import add_hunted, build_hunted_list_embed, remove_hunted
 from services.storage import save_hunteds
@@ -24,11 +25,16 @@ class HuntedTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.list_message = {}
-        self.previous_online = None
+        self.logins = LoginTracker()  # Hora de ingreso de cada hunted conectado
         self.track_hunteds.start()
 
     def cog_unload(self):
         self.track_hunteds.cancel()
+
+    @property
+    def online_keys(self):
+        """Hunteds conectados ahora (para la lista de !hunted y el panel)."""
+        return set(self.logins.since)
 
     # --- COMANDOS ---
     @commands.hybrid_group(name="hunted", fallback="list", invoke_without_command=True,
@@ -36,7 +42,7 @@ class HuntedTracker(commands.Cog):
     async def hunted(self, ctx):
         """!hunted -> muestra todos los hunteds, separados en conectados y desconectados."""
         logger.info(f"📩 Comando !hunted ejecutado por {ctx.author}")
-        await ctx.send(embed=build_hunted_list_embed(self.previous_online))
+        await ctx.send(embed=build_hunted_list_embed(self.online_keys))
 
     @hunted.command(name="add", description="Agrega un personaje a la lista de hunteds")
     @app_commands.describe(character_name="Nombre del personaje en Tibia")
@@ -58,7 +64,7 @@ class HuntedTracker(commands.Cog):
         if not HUNTED_PLAYERS:
             # Sin hunteds se publica igual la lista vacía, para que estén los botones de agregar
             await send_or_update_embed(
-                self.bot, self.list_message, CHANNEL_HUNTEDS, self._build_list_embeds([]), view=HuntedPanelView(), keep_last=True
+                self.bot, self.list_message, CHANNEL_HUNTEDS, self._build_list_embeds([]), view=HuntedPanelView()
             )
             return
         logger.info(f"🎯 Verificando hunteds en {WORLD}...")
@@ -79,6 +85,7 @@ class HuntedTracker(commands.Cog):
         alerts = []
         online_list = []
         online_keys = set()
+        last_logins = {}
         changed = False
 
         for (key, data), res in zip(entries, details):
@@ -96,12 +103,11 @@ class HuntedTracker(commands.Cog):
             if not player:
                 continue
 
-            # --- CONEXIÓN ---
+            # --- CONECTADO (sin aviso: aparece en la lista con su hora de ingreso) ---
             lvl = player.get("level", 0)
             voc = player.get("vocation", data.get("vocation", "N/A"))
             online_keys.add(key)
-            if self.previous_online is not None and key not in self.previous_online:
-                alerts.append(self._build_login_embed(data, lvl, voc))
+            last_logins[key] = parse_api_time((res or {}).get("character_info", {}).get("last_login"))
 
             # --- NIVEL ---
             old_level = data.get("level")
@@ -112,7 +118,7 @@ class HuntedTracker(commands.Cog):
                 changed = True
 
             online_list.append((
-                lvl, voc,
+                key, lvl, voc,
                 f"**[{data['char_name']}]({player_url(data['char_name'])})**\n  Nivel {lvl} · {voc}",
             ))
 
@@ -120,19 +126,15 @@ class HuntedTracker(commands.Cog):
             save_hunteds()
         # Si la API del mundo falló (lista vacía), no se actualiza el estado de conexión
         if online_world:
-            self.previous_online = online_keys
+            self.logins.update(online_keys, last_logins)
+        online_list = [(lvl, voc, f"{entry} · {self.logins.text(key)}") for key, lvl, voc, entry in online_list]
 
         list_embeds = self._build_list_embeds(online_list)
 
-        if alerts:
-            for alert in alerts:
-                await broadcast_embed(self.bot, CHANNEL_HUNTEDS, alert)
-            # La lista se vuelve a publicar para que quede debajo de los avisos
-            await repost_embed(self.bot, self.list_message, CHANNEL_HUNTEDS, list_embeds, view=HuntedPanelView())
-        else:
-            await send_or_update_embed(
-                self.bot, self.list_message, CHANNEL_HUNTEDS, list_embeds, view=HuntedPanelView(), keep_last=True
-            )
+        # Los avisos de nivel y muerte van como mensajes aparte; la lista siempre se edita en el mismo mensaje
+        for alert in alerts:
+            await broadcast_embed(self.bot, CHANNEL_HUNTEDS, alert)
+        await send_or_update_embed(self.bot, self.list_message, CHANNEL_HUNTEDS, list_embeds, view=HuntedPanelView())
 
     @staticmethod
     def _build_list_embeds(online_list):
@@ -154,20 +156,6 @@ class HuntedTracker(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- AVISOS ---
-    @staticmethod
-    def _build_login_embed(data, level, vocation):
-        logger.info(f"🎯 Hunted conectado: {data['char_name']}")
-        embed = discord.Embed(
-            title=f"{data['char_name']} se conectó",
-            url=player_url(data["char_name"]),
-            description=f"Hunted · Nivel {level} · {vocation}",
-            color=discord.Color.dark_red(),
-            timestamp=discord.utils.utcnow(),
-        )
-        embed.set_thumbnail(url=vocation_image_url(vocation))
-        embed.set_footer(text=f"Mundo: {WORLD}")
-        return embed
-
     @staticmethod
     def _build_level_embed(data, old_level, new_level, vocation):
         logger.info(f"🎯 Hunted {data['char_name']}: nivel {old_level} -> {new_level}")

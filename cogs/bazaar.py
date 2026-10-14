@@ -14,7 +14,7 @@ import time
 import discord
 import tibiapy
 import tibiapy.errors
-from aiohttp_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
+from aiohttp_socks import ProxyConnectionError, ProxyConnector, ProxyError, ProxyTimeoutError
 from discord import app_commands
 from discord.ext import commands, tasks
 from PIL import Image
@@ -576,8 +576,10 @@ class Bazaar(commands.Cog):
     async def cog_load(self):
         # Con sesión propia: tiempo límite por petición y, si está configurado, el proxy
         self.client = tibiapy.Client(session=create_session())
-        if BAZAAR_PROXY_URL:
+        if isinstance(self.client.session.connector, ProxyConnector):
             logger.info("🛒 Bazaar: las consultas a tibia.com saldrán por el proxy configurado")
+        else:
+            logger.info("Bazaar: sin proxy; las consultas a tibia.com salen directo desde este servidor")
         self.keep_panel.start()
 
     async def cog_unload(self):

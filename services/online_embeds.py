@@ -1,6 +1,7 @@
 import discord
 
-from services.tibia_wiki import VOCATION_OUTFITS, vocation_image_url, vocation_key
+from services.tibia_wiki import VOCATION_OUTFITS, vocation_key
+from services.vocation_thumbnails import vocation_thumbnail
 
 VOCATION_GROUP_NAMES = {
     "knight": "Knights",
@@ -10,6 +11,15 @@ VOCATION_GROUP_NAMES = {
     "monk": "Monks",
     "none": "Sin vocación",
 }
+
+LIST_MIN_WIDTH_CHARS = 42
+BLANK = "⠀"  # Espacio invisible que Discord no recorta
+NBSP = " "  # Espacio que no parte la línea: el número queda junto al nombre del rol
+
+
+def _wide(title):
+    """Rellena el título con espacios invisibles hasta LIST_MIN_WIDTH_CHARS (alineado a la izquierda)."""
+    return title + BLANK * max(0, LIST_MIN_WIDTH_CHARS - len(title))
 
 
 def player_url(name: str) -> str:
@@ -24,7 +34,7 @@ def build_grouped_online_embeds(online_list, title, footer, color, empty_text):
     """
     if not online_list:
         embed = discord.Embed(
-            title=title,
+            title=_wide(title),
             description=empty_text,
             color=discord.Color.dark_grey(),
             timestamp=discord.utils.utcnow(),
@@ -52,11 +62,11 @@ def build_grouped_online_embeds(online_list, title, footer, color, empty_text):
             total_chars += len(entry) + 2
 
         embed = discord.Embed(
-            title=f"{VOCATION_GROUP_NAMES[key]} · {len(members)}",
+            title=_wide(f"{VOCATION_GROUP_NAMES[key]}{NBSP}·{NBSP}{len(members)}"),
             description="\n\n".join(entries),
             color=color,
         )
-        embed.set_thumbnail(url=vocation_image_url(key))
+        embed.set_thumbnail(url=vocation_thumbnail(key))
         embeds.append(embed)
 
     embeds[0].set_author(name=title)

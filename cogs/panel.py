@@ -21,7 +21,7 @@ MAX_SELECT_OPTIONS = 25  # Límite de Discord por menú desplegable
 
 def _hunted_online_keys(interaction: discord.Interaction):
     cog = interaction.client.get_cog("HuntedTracker")
-    return cog.previous_online if cog else set()
+    return cog.online_keys if cog else set()
 
 
 # --- FORMULARIOS ---

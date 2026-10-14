@@ -3,6 +3,7 @@ from discord.ext import commands
 from channels import CHANNEL_ONLINES, find_channel
 from config import logger
 from services.discord_utils import move_list_to_bottom
+from services.vocation_thumbnails import thumbnail_files
 
 
 class OnlineCommands(commands.Cog):
@@ -28,7 +29,7 @@ class OnlineCommands(commands.Cog):
                 ctx, self.bot, tracker.watched_embed_message, CHANNEL_ONLINES, tracker.last_online_embeds
             )
         else:
-            await ctx.send(embeds=tracker.last_online_embeds)
+            await ctx.send(embeds=tracker.last_online_embeds, files=thumbnail_files(tracker.last_online_embeds))
 
 
 async def setup(bot):

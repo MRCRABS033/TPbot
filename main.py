@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from config import TOKEN, logger
 from services.storage import load_data, load_hunteds
+from services.vocation_thumbnails import load_vocation_thumbnails
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -32,6 +33,8 @@ INITIAL_EXTENSIONS = [
 
 
 async def setup_hook():
+    # Outfits de vocación ampliados para las listas de #onlines, #frees y #hunteds
+    await load_vocation_thumbnails()
     # Registra los comandos de barra (/) en Discord para que aparezcan en el menú
     synced = await bot.tree.sync()
     logger.info(f"Comandos de barra sincronizados: {len(synced)}")

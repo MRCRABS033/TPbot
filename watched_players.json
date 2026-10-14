@@ -5,7 +5,7 @@
         "owner": "Miguel",
         "initial_level": 164,
         "weekly_start_level": 164,
-        "current_level": 183,
+        "current_level": 186,
         "vocation": "Master Sorcerer"
     },
     "chi quito": {
@@ -14,7 +14,7 @@
         "owner": "Chiquito",
         "initial_level": 435,
         "weekly_start_level": 435,
-        "current_level": 441,
+        "current_level": 440,
         "vocation": "Master Sorcerer"
     },
     "viejoloko": {
@@ -41,7 +41,7 @@
         "owner": "Karma",
         "initial_level": 373,
         "weekly_start_level": 373,
-        "current_level": 389,
+        "current_level": 391,
         "vocation": "Elite Knight"
     },
     "darkwa malynechai": {
@@ -50,7 +50,7 @@
         "owner": "Jahir",
         "initial_level": 137,
         "weekly_start_level": 137,
-        "current_level": 151,
+        "current_level": 152,
         "vocation": "Elite Knight"
     },
     "zussybean": {
@@ -77,7 +77,7 @@
         "owner": "Mariguas",
         "initial_level": 32,
         "weekly_start_level": 32,
-        "current_level": 35,
+        "current_level": 36,
         "vocation": "Royal Paladin"
     },
     "luvi amyce": {
@@ -86,7 +86,7 @@
         "owner": "Valentina",
         "initial_level": 56,
         "weekly_start_level": 56,
-        "current_level": 57,
+        "current_level": 58,
         "vocation": "Royal Paladin"
     },
     "superchoco": {
@@ -97,5 +97,32 @@
         "weekly_start_level": 98,
         "current_level": 98,
         "vocation": "Royal Paladin"
+    },
+    "moema": {
+        "char_name": "Moema",
+        "tibia_link": "[Moema](https://www.tibia.com/community/?subtopic=characters&name=moema)",
+        "owner": "Karen",
+        "initial_level": 134,
+        "weekly_start_level": 134,
+        "current_level": 140,
+        "vocation": "Elder Druid"
+    },
+    "psoz": {
+        "char_name": "Psoz",
+        "tibia_link": "[Psoz](https://www.tibia.com/community/?subtopic=characters&name=psoz)",
+        "owner": "Chepe",
+        "initial_level": 154,
+        "weekly_start_level": 154,
+        "current_level": 158,
+        "vocation": "Master Sorcerer"
+    },
+    "mitaaaaa": {
+        "char_name": "Mitaaaaa",
+        "tibia_link": "[Mitaaaaa](https://www.tibia.com/community/?subtopic=characters&name=mitaaaaa)",
+        "owner": "Karma",
+        "initial_level": 325,
+        "weekly_start_level": 325,
+        "current_level": 325,
+        "vocation": "Master Sorcerer"
     }
 }

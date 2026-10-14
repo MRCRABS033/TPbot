@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import discord
 from discord import app_commands
@@ -6,9 +7,10 @@ from discord.ext import commands, tasks
 from channels import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
 from config import WATCHED_PLAYERS, logger
 from services.task_utils import resilient
-from services.discord_utils import broadcast_embed, repost_embed, send_or_update_embed
+from services.discord_utils import send_or_update_embed
 from services.storage import save_data
 from services.tibia_api import fetch_player_data, fetch_world_online_players
+from services.login_times import LoginTracker, parse_api_time
 from services.online_embeds import build_grouped_online_embeds
 from services.tibia_wiki import vocation_image_url
 
@@ -17,9 +19,7 @@ class WatchedTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.watched_embed_message = {}
-        # Personajes online en la revisión anterior. None = aún no hay revisión previa
-        # (así no se avisa de todos los conectados cada vez que el bot arranca).
-        self.previous_online = None
+        self.logins = LoginTracker()  # Hora de ingreso de cada personaje conectado
         self.last_online_embeds = None  # Última lista generada (la usa !online)
         self.update_online_watched_players.start()
 
@@ -145,7 +145,6 @@ class WatchedTracker(commands.Cog):
 
             online_list = []
             online_keys = set()
-            logins = []
             for char_key, info in WATCHED_PLAYERS.items():
                 char_name = info["char_name"]
                 owner_name = info["owner"]
@@ -156,10 +155,7 @@ class WatchedTracker(commands.Cog):
                     voc = player_data.get("vocation", "N/A")
                     url = f"https://www.tibia.com/community/?subtopic=characters&name={char_name.replace(' ', '+')}"
 
-                    # --- DETECCIÓN DE CONEXIÓN ---
                     online_keys.add(char_key)
-                    if self.previous_online is not None and char_key not in self.previous_online:
-                        logins.append(self._build_login_embed(char_name, url, owner_name, lvl, voc))
 
                     # --- DETECCIÓN Y ALERTA DE SUBIDA DE NIVEL ---
                     old_level = info.get("current_level")
@@ -179,25 +175,33 @@ class WatchedTracker(commands.Cog):
 
                         logger.info(f"🎉 Alerta de nivel para {char_name}: {old_level} -> {lvl}")
 
-                    online_list.append((lvl, voc, f"**[{char_name}]({url})** · {owner_name}\n  Nivel {lvl} · {voc}"))
+                    online_list.append((char_key, lvl, voc, char_name, url, owner_name))
 
-            embed = self._build_online_embeds(online_list, world)
-            self.last_online_embeds = embed
-
-            # Si la API falló (lista vacía) no se actualiza el estado, para no avisar
-            # de todos como "recién conectados" en la siguiente revisión.
+            # Hora de ingreso (si la API falló y la lista vino vacía, no se toca el estado)
             if online_world_players:
-                self.previous_online = online_keys
+                last_logins = await self._api_login_times(session, online_keys) if self.logins.needs_api_times else None
+                self.logins.update(online_keys, last_logins)
 
-            if logins:
-                for login_embed in logins:
-                    await broadcast_embed(self.bot, CHANNEL_ONLINES, login_embed)
-                # La lista se vuelve a publicar para que quede debajo de los avisos
-                await repost_embed(self.bot, self.watched_embed_message, CHANNEL_ONLINES, embed)
-            else:
-                await send_or_update_embed(
-                    self.bot, self.watched_embed_message, CHANNEL_ONLINES, embed
-                )
+            entries = [
+                (lvl, voc, f"**[{name}]({url})** · {owner}\n  Nivel {lvl} · {voc} · {self.logins.text(key)}")
+                for key, lvl, voc, name, url, owner in online_list
+            ]
+            embed = self._build_online_embeds(entries, world)
+            self.last_online_embeds = embed
+            # Una sola lista que se edita (sin un mensaje por cada conexión)
+            # Siempre se edita el mismo mensaje (entre o salga alguien)
+            await send_or_update_embed(self.bot, self.watched_embed_message, CHANNEL_ONLINES, embed)
+
+    async def _api_login_times(self, session, keys):
+        """{clave: hora de ingreso} según la API (solo al arrancar el bot, para quienes ya estaban online)."""
+        semaphore = asyncio.Semaphore(5)
+
+        async def lookup(key):
+            async with semaphore:
+                res = await fetch_player_data(session, WATCHED_PLAYERS[key]["char_name"])
+            return key, parse_api_time((res or {}).get("character_info", {}).get("last_login"))
+
+        return dict(await asyncio.gather(*(lookup(k) for k in keys)))
 
     @staticmethod
     def _build_online_embeds(online_list, world):
@@ -208,18 +212,6 @@ class WatchedTracker(commands.Cog):
             color=discord.Color.green(),
             empty_text="Ningún personaje monitoreado está conectado.",
         )
-
-    @staticmethod
-    def _build_login_embed(char_name, url, owner, level, vocation):
-        logger.info(f"🟢 {char_name} se conectó")
-        embed = discord.Embed(
-            title=f"{char_name} se conectó",
-            url=url,
-            description=f"{owner} · Nivel {level} · {vocation}",
-            color=discord.Color.green(),
-            timestamp=discord.utils.utcnow(),
-        )
-        return embed
 
     @update_online_watched_players.before_loop
     async def before_update(self):
