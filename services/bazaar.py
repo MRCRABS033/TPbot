@@ -15,18 +15,20 @@ import time
 from dataclasses import dataclass, replace
 
 import aiohttp
+from aiohttp_socks import ProxyConnector
 from bs4 import BeautifulSoup
 from PIL import Image
 from tibiapy import enums
 from tibiapy.models import AuctionFilters
 
-from config import logger
+from config import BAZAAR_PROXY_URL, logger
 from constants.bazaar import (
     AUCTION_URL,
     CARDS_PER_IMAGE,
     DETAILS_CACHE_SECONDS,
     MAX_PAGES_FOR_PRICE_FILTER,
     PARALLEL_REQUESTS,
+    REQUEST_TIMEOUT,
     TIBIA_PAGE_SIZE,
     ORDER_OPTIONS,
     PVP_OPTIONS,
@@ -34,6 +36,16 @@ from constants.bazaar import (
 )
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (TPbot)"}
+
+
+def create_session():
+    """
+    Sesión HTTP para todo lo del bazaar (listado, fichas e imágenes): con tiempo límite y, si está
+    configurado BAZAAR_PROXY_URL, saliendo por el proxy (tibia.com bloquea muchas IPs de hosting).
+    """
+    connector = ProxyConnector.from_url(BAZAAR_PROXY_URL) if BAZAAR_PROXY_URL else None
+    return aiohttp.ClientSession(headers=HEADERS, connector=connector,
+                                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT))
 # Skills que se muestran en la ficha (la página también trae bonus de tareas que no interesan)
 MAIN_SKILLS = ("Magic Level", "Fist Fighting", "Club Fighting", "Sword Fighting", "Axe Fighting",
                "Distance Fighting", "Shielding", "Fishing")
@@ -248,7 +260,7 @@ async def fetch_auction_details(auction_id):
         return cached[1]
 
     try:
-        async with aiohttp.ClientSession(headers=HEADERS) as session:
+        async with create_session() as session:
             async with session.get(AUCTION_URL.format(auction_id=auction_id)) as response:
                 if response.status != 200:
                     logger.warning(f"⚠️ HTTP {response.status} al leer la subasta {auction_id}")
@@ -285,16 +297,19 @@ async def download_outfits(urls):
     """{url: Image RGBA} de los outfits (los que no se puedan descargar quedan fuera)."""
     pending = [u for u in dict.fromkeys(urls) if u and u not in _outfit_cache]
     if pending:
-        async with aiohttp.ClientSession(headers=HEADERS) as session:
+        async with create_session() as session:
             async def fetch(url):
-                try:
-                    async with session.get(url) as response:
-                        if response.status == 200 and response.content_type.startswith("image/"):
-                            image = Image.open(io.BytesIO(await response.read()))
-                            image.seek(0)  # Primer fotograma si es animado
-                            return url, image.convert("RGBA")
-                except Exception as e:
-                    logger.warning(f"⚠️ No se pudo descargar el outfit {url}: {e}")
+                # Dos intentos: con un proxy que cambia de IP, alguna petición suelta puede fallar
+                for attempt in range(2):
+                    try:
+                        async with session.get(url) as response:
+                            if response.status == 200 and response.content_type.startswith("image/"):
+                                image = Image.open(io.BytesIO(await response.read()))
+                                image.seek(0)  # Primer fotograma si es animado
+                                return url, image.convert("RGBA")
+                    except Exception as e:
+                        if attempt:
+                            logger.warning(f"⚠️ No se pudo descargar el outfit {url}: {e}")
                 return url, None
 
             for url, image in await asyncio.gather(*(fetch(u) for u in pending)):
