@@ -17,6 +17,7 @@ INITIAL_EXTENSIONS = [
     "cogs.watched_tracker",
     "cogs.hunted_tracker",
     "cogs.bosses",
+    "cogs.boosted_creature",
     "cogs.bazaar",
     "cogs.panel",
     "cogs.cleanup",
@@ -28,6 +29,7 @@ INITIAL_EXTENSIONS = [
     "cogs.commands.owner",
     "cogs.commands.online",
     "cogs.commands.help",
+
 ]
 
 
