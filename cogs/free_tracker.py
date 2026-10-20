@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands, tasks
 
 from channels import CHANNEL_FREES, find_channel
-from config import logger
+from config import logger, WORLD
 from services.task_utils import resilient
 from services.discord_utils import broadcast_embed, move_list_to_bottom, repost_embed, send_or_update_embed
 from services.tibia_api import fetch_player_data, fetch_world_online_players
@@ -52,7 +52,7 @@ class FreeTracker(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def update_free_players(self):
-        world = "Quidera"
+        world = WORLD
         logger.info(f"🔄 Consultando Free Accounts online en {world}...")
         semaphore = asyncio.Semaphore(8)
 
