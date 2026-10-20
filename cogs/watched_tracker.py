@@ -5,7 +5,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from channels import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
-from config import WATCHED_PLAYERS, logger
+from config import WATCHED_PLAYERS, WORLD, logger
 from services.task_utils import resilient
 from services.discord_utils import send_or_update_embed
 from services.storage import save_data
@@ -128,7 +128,7 @@ class WatchedTracker(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def update_online_watched_players(self):
-        world = "Quidera"
+        world = WORLD
         logger.info(f"🟢 Verificando personajes monitoreados en {world}...")
 
         if not WATCHED_PLAYERS:

@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands, tasks
 
 from channels import CHANNEL_FREES, find_channel
-from config import logger
+from config import logger, WORLD
 from services.task_utils import resilient
 from services.discord_utils import move_list_to_bottom, send_or_update_embed
 from services.online_embeds import build_grouped_online_embeds, player_url
@@ -50,7 +50,7 @@ class FreeTracker(commands.Cog):
     @resilient
     @tasks.loop(seconds=60)
     async def update_free_players(self):
-        world = "Quidera"
+        world = WORLD
         logger.info(f"🔄 Consultando Free Accounts online en {world}...")
         semaphore = asyncio.Semaphore(8)
 

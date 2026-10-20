@@ -4,3 +4,4 @@ __pycache__/
 
 # Copias que deja !restaurar
 *.bak
+.env

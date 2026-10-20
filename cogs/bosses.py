@@ -11,6 +11,7 @@ import io
 import re
 from datetime import datetime, timedelta
 
+from utils import Utils
 import aiohttp
 import discord
 from discord.ext import commands, tasks
@@ -25,10 +26,9 @@ from services.task_utils import resilient
 from services.tibia_api import fetch_boosted_boss
 from services.boss_info import fetch_boss_info
 from services.tibia_wiki import wiki_file_names_for
-
+from utils import Utils
 # La hora que se escribe al crear la actividad se interpreta en hora de México (Ciudad de México).
 # Discord no informa la zona horaria de cada usuario; en el anuncio cada quien la ve en su hora local.
-LOCAL_TZ = pytz.timezone("America/Mexico_City")
 # La imagen del boss (64x64) se agranda sin suavizar para que se vea nítida
 IMAGE_SCALE = 3
 MAX_SELECT_OPTIONS = 25  # Límite de Discord por menú desplegable
@@ -42,106 +42,6 @@ BOSSES_URL = "https://www.tibia.com/library/?subtopic=boostablebosses"
 # Fuente principal: TibiaWiki BR (imágenes animadas). static.tibia.com bloquea muchas descargas
 # automáticas (depende del servidor donde corra el bot), así que queda como respaldo.
 WIKI_FILE_URL = "https://www.tibiawiki.com.br/wiki/Special:FilePath/{}"
-def _upscale(data):
-    """Agranda la imagen sin suavizar (pixel art nítido). Mantiene la animación si la tiene."""
-    image = Image.open(io.BytesIO(data))
-    out = io.BytesIO()
-    if getattr(image, "n_frames", 1) > 1:
-        frames, durations = [], []
-        for frame in ImageSequence.Iterator(image):
-            rgba = frame.convert("RGBA")
-            frames.append(rgba.resize((rgba.width * IMAGE_SCALE, rgba.height * IMAGE_SCALE), Image.NEAREST))
-            durations.append(frame.info.get("duration", 100))
-        frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:],
-                       duration=durations, loop=0, disposal=2)
-        return out.getvalue(), "boss.gif"
-    rgba = image.convert("RGBA")
-    rgba.resize((rgba.width * IMAGE_SCALE, rgba.height * IMAGE_SCALE), Image.NEAREST).save(out, format="PNG")
-    return out.getvalue(), "boss.png"
-
-
-async def download_boss_image(boss):
-    """
-    Descarga la imagen del boss (TibiaWiki BR y, si falla, static.tibia.com) y la agranda.
-    Devuelve (bytes, nombre_de_archivo) o None.
-    """
-    urls = [WIKI_FILE_URL.format(name) for name in wiki_file_names_for(boss["name"])]
-    if boss.get("image_url"):
-        urls.append(boss["image_url"])
-
-    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (TPbot)"}) as session:
-        for url in urls:
-            try:
-                async with session.get(url) as response:
-                    if response.status != 200 or not response.content_type.startswith("image/"):
-                        continue
-                    data = await response.read()
-                return _upscale(data)
-            except Exception as e:
-                logger.warning(f"⚠️ No se pudo usar la imagen {url}: {e}")
-    logger.warning(f"⚠️ No se pudo descargar la imagen de {boss['name']}; Discord la cargará desde la API")
-    return None
-
-
-def boss_media(cog):
-    """(url para el embed, archivo adjunto o None) según la imagen disponible."""
-    if cog and cog.image:
-        data, filename = cog.image
-        return f"attachment://{filename}", discord.File(io.BytesIO(data), filename=filename)
-    if cog and cog.current_boss and cog.current_boss.get("image_url"):
-        # Último recurso: que Discord cargue la imagen directamente desde la API
-        return cog.current_boss["image_url"], None
-    return None, None
-
-
-def _send_kwargs(embed, file, **extra):
-    kwargs = {"embed": embed, **extra}
-    if file:
-        kwargs["file"] = file
-    return kwargs
-
-
-# --- HORA DE LA ACTIVIDAD ---
-def parse_activity_time(text):
-    """
-    '9:30 pm', '9pm', '21:30', '21' -> datetime de hoy (o mañana si esa hora ya pasó), hora de México.
-    Devuelve None si no se entiende.
-    """
-    match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*(a|p)?\.?\s*(m\.?)?\s*", text.lower())
-    if not match:
-        return None
-    hour, minute = int(match.group(1)), int(match.group(2) or 0)
-    period = match.group(3)
-    if period:
-        if not 1 <= hour <= 12:
-            return None
-        hour = hour % 12 + (12 if period == "p" else 0)
-    if hour > 23 or minute > 59:
-        return None
-
-    now = datetime.now(LOCAL_TZ)
-    day = now.date()
-    if (hour, minute) < (now.hour, now.minute - 5):
-        day += timedelta(days=1)  # Esa hora ya pasó hoy: es mañana
-    return LOCAL_TZ.localize(datetime(day.year, day.month, day.day, hour, minute))
-
-
-def format_activity_time(text):
-    when = parse_activity_time(text)
-    if not when:
-        return text  # No se entendió: se muestra tal cual se escribió
-    ts = int(when.timestamp())
-    # Discord lo muestra en la hora local de cada persona
-    return f"<t:{ts}:t> · <t:{ts}:R>\n<t:{ts}:D>"
-
-
-# --- EMBEDS ---
-def _number(value):
-    """'28000' -> '28.000'."""
-    try:
-        return f"{int(value):,}".replace(",", ".")
-    except (TypeError, ValueError):
-        return value
 
 
 def add_boss_info_fields(embed, info, with_location=True):
@@ -151,9 +51,9 @@ def add_boss_info_fields(embed, info, with_location=True):
     if info.get("bosstiaryclass"):
         embed.add_field(name="Clase", value=info["bosstiaryclass"], inline=True)
     if info.get("hp"):
-        embed.add_field(name="Vida", value=_number(info["hp"]), inline=True)
+        embed.add_field(name="Vida", value=Utils._number(info["hp"]), inline=True)
     if info.get("exp"):
-        embed.add_field(name="Experiencia", value=_number(info["exp"]), inline=True)
+        embed.add_field(name="Experiencia", value=Utils._number(info["exp"]), inline=True)
     if info.get("cooldown"):
         embed.add_field(name="Cooldown", value=f"{info['cooldown']} h", inline=True)
     if with_location and info.get("location"):
@@ -190,9 +90,6 @@ def _add_list_fields(embed, title, items, separator="\n"):
         embed.add_field(name=title, value=separator.join(chunk), inline=False)
 
 
-def _no_info(embed):
-    embed.description = "No se encontró información de este boss en TibiaWiki."
-    return embed
 
 
 def build_abilities_embed(boss, info, image_url):
@@ -201,7 +98,7 @@ def build_abilities_embed(boss, info, image_url):
         embed.set_thumbnail(url=image_url)
     embed.set_footer(text="Fuente: TibiaWiki")
     if not info:
-        return _no_info(embed)
+        return Utils._no_info(embed)
 
     if info.get("max_damage"):
         embed.add_field(name="Daño máximo", value=info["max_damage"], inline=False)
@@ -225,7 +122,7 @@ def build_loot_embed(boss, info, image_url):
         embed.set_thumbnail(url=image_url)
     embed.set_footer(text="Fuente: TibiaWiki")
     if not info:
-        return _no_info(embed)
+        return Utils._no_info(embed)
     if not info.get("loot"):
         embed.description = "TibiaWiki no tiene la lista de loot de este boss."
         return embed
@@ -244,7 +141,7 @@ def build_activity_embed(boss, time_text, note, participants, organizer, image_u
         timestamp=discord.utils.utcnow(),
     )
     embed.set_author(name="Nueva actividad")
-    embed.add_field(name="Hora", value=format_activity_time(time_text), inline=True)
+    embed.add_field(name="Hora", value=Utils.format_activity_time(time_text), inline=True)
     embed.add_field(name="Boss boosted", value=boss["name"], inline=True)
     embed.add_field(name="Organiza", value=organizer.mention, inline=True)
     if info and info.get("location"):
@@ -296,10 +193,10 @@ class ActivityModal(discord.ui.Modal, title="Crear actividad"):
             )
             return
 
-        image_url, file = boss_media(cog)
+        image_url, file = Utils.creature_media(cog)
         embed = build_activity_embed(view.boss, self.time.value, self.note.value, participants,
                                      interaction.user, image_url, cog.boss_info if cog else None)
-        await channel.send(**_send_kwargs(embed, file))
+        await channel.send(**Utils._send_kwargs(embed, file))
         logger.info(f"📣 Actividad de {view.boss['name']} creada por {interaction.user} "
                     f"({len(participants)} participantes, hora: {self.time.value})")
 
@@ -398,9 +295,9 @@ class BossCardView(discord.ui.View):
         if cog.boss_info is None:
             async with aiohttp.ClientSession() as session:
                 cog.boss_info = await fetch_boss_info(session, cog.current_boss["name"])
-        image_url, file = boss_media(cog)
+        image_url, file = Utils.creature_media(cog)
         await interaction.followup.send(
-            **_send_kwargs(build_embed(cog.current_boss, cog.boss_info, image_url), file), ephemeral=True
+            **Utils._send_kwargs(build_embed(cog.current_boss, cog.boss_info, image_url), file), ephemeral=True
         )
 
 
@@ -431,11 +328,11 @@ class BossTracker(commands.Cog):
         if self.current_boss and boss["name"] == self.current_boss["name"]:
             if not self.image:
                 # La imagen falló antes: se reintenta (si ahora funciona, la tarjeta se republica)
-                self.image = await download_boss_image(boss)
+                self.image = await Utils.download_creature_image(boss, WIKI_FILE_URL)
                 return self.image is not None
             return False
         self.current_boss = boss
-        self.image = await download_boss_image(boss)
+        self.image = await Utils.download_creature_image(boss, WIKI_FILE_URL)
         async with aiohttp.ClientSession() as session:
             self.boss_info = await fetch_boss_info(session, boss["name"])
         logger.info(f"👑 Boss boosted de hoy: {boss['name']}")
@@ -476,9 +373,9 @@ class BossTracker(commands.Cog):
                     await msg.delete()
                 except discord.HTTPException:
                     pass
-            image_url, file = boss_media(self)
+            image_url, file = Utils.creature_media(self)
             new_msg = await channel.send(
-                **_send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
+                **Utils._send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
                                view=BossCardView()),
                 silent=not new_boss,  # Solo notifica cuando hay un boss nuevo
             )
@@ -498,8 +395,8 @@ class BossTracker(commands.Cog):
         if not self.current_boss:
             await ctx.send("⚠️ No se pudo consultar el boss de hoy. Intenta en un momento.")
             return
-        image_url, file = boss_media(self)
-        await ctx.send(**_send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
+        image_url, file = Utils.creature_media(self)
+        await ctx.send(**Utils._send_kwargs(build_boss_card(self.current_boss, image_url, self.boss_info), file,
                                       view=BossCardView()))
 
 

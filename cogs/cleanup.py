@@ -38,7 +38,6 @@ RECENT_GRACE = timedelta(minutes=2)
 # (canales, cog que mantiene los mensajes que se conservan, atributos con el id de esos mensajes por servidor)
 CHANNELS_TO_CLEAN = [
     ([CHANNEL_TPBOT], "Panel", ["group_list_message"]),
-    ([CHANNEL_ONLINES], "WatchedTracker", ["watched_embed_message"]),
     ([CHANNEL_FREES], "FreeTracker", ["free_embed_message"]),
     ([CHANNEL_HUNTEDS], "HuntedTracker", ["list_message"]),
     ([CHANNEL_BOSSES], "BossTracker", ["card_message"]),
