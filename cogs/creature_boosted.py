@@ -1,7 +1,7 @@
 import io
 import re
 from datetime import datetime, timedelta
-from utils import Utils
+from cogs.utils import Utils
 
 import aiohttp
 import discord
