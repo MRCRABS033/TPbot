@@ -3,9 +3,14 @@ import aiohttp
 import re
 
 from datetime import datetime, timedelta
-from config import logger
+
+import discord
 from PIL import Image, ImageSequence
 import pytz
+
+from config import logger
+from services.http import new_session
+from services.tibia_wiki import wiki_file_names_for
 LOCAL_TZ = pytz.timezone("America/Mexico_City")
 class Utils:
     def __init__(self):
@@ -38,11 +43,11 @@ class Utils:
         if creature.get("image_url"):
             urls.append(creature["image_url"])
 
-        async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (TPbot)"}) as session:
+        async with new_session(headers={"User-Agent": "Mozilla/5.0 (TPbot)"}) as session:
             for url in urls:
                 try:
                     async with session.get(url) as response:
-                        if response.status == 200 or not response.content_type.startswith("image/"):
+                        if response.status != 200 or not response.content_type.startswith("image/"):
                             continue
                         data = await response.read()
                     return Utils._upscale(data, image_scale=3)
@@ -57,9 +62,10 @@ class Utils:
         if cog and cog.image:
             data, filename = cog.image
             return f"attachment://{filename}", discord.File(io.BytesIO(data), filename=filename)
-        if cog and cog.current_creature and cog.current_creature.get("image_url"):
+        creature = getattr(cog, "current_creature", None) or getattr(cog, "current_boss", None)
+        if cog and creature and creature.get("image_url"):
             #Ultimo recurso: que Discord cargue la imagen directamente desde la API
-            return cog.current_creature["image_url"], None
+            return creature["image_url"], None
         return None, None
 
 # --- HORA DE LA ACTIVIDAD ---

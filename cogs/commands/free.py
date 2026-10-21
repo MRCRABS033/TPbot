@@ -3,16 +3,17 @@ import discord
 from discord.ext import commands
 
 from channels import CHANNEL_FREES, find_channel
-from config import WATCHED_PLAYERS, PLAYERS_STATE, logger
+from config import WATCHED_PLAYERS, PLAYERS_STATE, WORLD, logger
 from services.tibia_api import fetch_player_data, fetch_world_online_players
 from services.storage import save_data
+from services.http import new_session
 
 class FreeCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command(name="free")
-    async def list_free_players(self, ctx, world: str = "Quidera"):
+    async def list_free_players(self, ctx, world: str = WORLD):
         logger.info(f"📩 Comando !free ejecutado por {ctx.author} para el mundo: '{world}'")
 
         target_channel = find_channel(ctx.guild.text_channels, CHANNEL_FREES)
@@ -33,7 +34,7 @@ class FreeCommands(commands.Cog):
             "no vocation",
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with new_session() as session:
             online_players = await fetch_world_online_players(session, world)
 
             if not online_players:

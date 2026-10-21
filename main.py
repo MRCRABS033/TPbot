@@ -1,4 +1,6 @@
 import asyncio
+import os
+
 import discord
 from discord.ext import commands
 
@@ -18,7 +20,7 @@ INITIAL_EXTENSIONS = [
     "cogs.watched_tracker",
     "cogs.hunted_tracker",
     "cogs.bosses",
-    "cogs.boosted_creature",
+    "cogs.creature_boosted",
     "cogs.bazaar",
     "cogs.panel",
     "cogs.cleanup",
@@ -37,9 +39,13 @@ INITIAL_EXTENSIONS = [
 async def setup_hook():
     # Outfits de vocación ampliados para las listas de #onlines, #frees y #hunteds
     await load_vocation_thumbnails()
-    # Registra los comandos de barra (/) en Discord para que aparezcan en el menú
-    synced = await bot.tree.sync()
-    logger.info(f"Comandos de barra sincronizados: {len(synced)}")
+    # Registra los comandos de barra (/) en Discord para que aparezcan en el menú.
+    # Solo cuando se pide (SYNC_SLASH_COMMANDS=1): sincronizar en cada arranque
+    # gasta el rate limit de Discord y con reinicios seguidos puede bloquearlo.
+    # Pon la variable en Dokploy, despliega una vez y quítala.
+    if os.getenv("SYNC_SLASH_COMMANDS") == "1":
+        synced = await bot.tree.sync()
+        logger.info(f"Comandos de barra sincronizados: {len(synced)}")
 
 bot.setup_hook = setup_hook
 

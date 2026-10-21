@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 
+from config import WORLD
+
 logger = logging.getLogger("TibiaBot")
 
 async def fetch_player_data(session, character_name: str):
@@ -41,7 +43,7 @@ async def fetch_player_data(session, character_name: str):
     return None
 
 
-async def fetch_world_online_players(session, world_name: str = "Quidera"):
+async def fetch_world_online_players(session, world_name: str = WORLD):
     """Consulta los jugadores online de un mundo en la API de TibiaData v4."""
     url = f"https://api.tibiadata.com/v4/world/{world_name}"
     logger.info(f"🌐 Consultando jugadores online en el mundo '{world_name}'...")
@@ -76,7 +78,7 @@ async def fetch_boosted_boss(session):
         logger.error(f"❌ Error al consultar el boss boosted: {e}")
     return None
 
-async def fetch__boosted_creature(session):
+async def fetch_boosted_creature(session):
     """Devuelve las creaturas boosted del día según TibiaData v4. Devuelve {"name", "image_url"} o None si falla."""
     url = "https://api.tibiadata.com/v4/creatures"
     try:

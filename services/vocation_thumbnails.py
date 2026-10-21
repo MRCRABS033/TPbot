@@ -14,6 +14,7 @@ import discord
 from PIL import Image, ImageSequence
 
 from services.tibia_wiki import VOCATION_OUTFITS, fetch_wiki_image, vocation_image_url
+from services.http import new_session
 
 THUMBNAIL_MAX_SIZE = 80  # Discord muestra las miniaturas a 80x80 como máximo
 ATTACHMENT_PREFIX = "attachment://"
@@ -60,7 +61,7 @@ def _enlarge(gif_bytes):
 
 async def load_vocation_thumbnails():
     """Descarga y prepara los outfits (una vez, al arrancar). Los que fallen usan la URL de TibiaWiki."""
-    async with aiohttp.ClientSession() as session:
+    async with new_session() as session:
         for key, file_name in VOCATION_OUTFITS.items():
             if key in _thumbnails:
                 continue

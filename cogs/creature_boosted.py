@@ -120,3 +120,7 @@ class CreatureBoostedTracker(commands.Cog):
         self.current_creature = creature
         self.image = await Utils.download_creature_image(creature, WIKI_FILE_URL)
         self.creature_info = await self.bot.tibia_api.get_creature_info(creature["name"])
+
+
+async def setup(bot):
+    await bot.add_cog(CreatureBoostedTracker(bot))
