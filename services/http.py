@@ -14,8 +14,23 @@ import aiohttp
 # margen de sobra sin dejar loops colgados.
 DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=20)
 
+_session = None
 
-def new_session(**kwargs):
-    """Crea una ClientSession con el timeout por defecto del bot."""
-    kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
-    return aiohttp.ClientSession(**kwargs)
+def get_session():
+    """Devuelve la sesion compartida del bot, creandola si hace falta.
+    
+        La session se crea dentro del event loop en el primer uso y se reutiliza siempre;
+        si por algo quedo cerrada, se recrea sola. No la cierres al terminar un request:
+        es de todo el bot.
+    """
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT)
+    return _session
+
+async def close_session():
+    """Cierra la sesion compartida del bot (al apagarlo)."""
+    global _session
+    if _session is not None and not _session.closed:
+        await _session.close()
+    _session = None

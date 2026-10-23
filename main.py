@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from config import TOKEN, logger
+from services.http import close_session
 from services.storage import load_data, load_hunteds
 from services.vocation_thumbnails import load_vocation_thumbnails
 
@@ -54,12 +55,14 @@ async def main():
     load_data()
     load_hunteds()
 
-    async with bot:
-        for extension in INITIAL_EXTENSIONS:
-            await bot.load_extension(extension)
-            logger.info(f"Extension cargada: {extension}")
-            
-        await bot.start(TOKEN)
+    try:
+        async with bot:
+            for extension in INITIAL_EXTENSIONS:
+                await bot.load_extension(extension)
+            logger.info(f"✅ Extensiones cargadas: {len(INITIAL_EXTENSIONS)}")
+            await bot.start(TOKEN)
+    finally:
+        await close_session()
 
 if __name__ == "__main__":
     asyncio.run(main())
