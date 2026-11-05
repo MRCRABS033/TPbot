@@ -3,7 +3,7 @@
 los personajes del grupo sin escribir comandos, y los comandos equivalentes.
 
 El panel siempre queda al final del canal. La lista (con nivel de ingreso y actual)
-se ve al pulsar Listar. El canal se limpia cada 12 horas (ver cogs/cleanup.py).
+se ve al pulsar Listar. El canal se limpia cada 12 horas (ver src/admin/cleanup.py).
 Los botones siguen funcionando aunque el bot se reinicie (vistas persistentes).
 """
 import discord

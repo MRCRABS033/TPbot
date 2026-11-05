@@ -20,10 +20,10 @@ INITIAL_EXTENSIONS = [
     "src.channels.bosses.page",
     "src.channels.bazaar.page",
     "src.channels.tpbot.page",
-    "cogs.cleanup",
-    "cogs.backup",
-    "cogs.commands.owner",
-    "cogs.commands.help",
+    "src.admin.cleanup",
+    "src.admin.backup",
+    "src.admin.owner",
+    "src.admin.help",
 ]
 
 

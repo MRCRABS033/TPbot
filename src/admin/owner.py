@@ -2,9 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from src.core.config import WATCHED_PLAYERS, PLAYERS_STATE, logger
-from src.api.tibiadata import fetch_player_data, fetch_world_online_players
-from services.storage import save_data
+from src.core.config import WATCHED_PLAYERS, logger
 
 class OwnerCommands(commands.Cog):
     def __init__(self, bot):
