@@ -15,7 +15,7 @@ INITIAL_EXTENSIONS = [
     "src.channels.cementerio.page",
     "src.channels.frees.page",
     "src.channels.empleado.page",
-    "cogs.watched_tracker",
+    "src.channels.onlines.page",
     "cogs.hunted_tracker",
     "cogs.bosses",
     "cogs.bazaar",
@@ -27,7 +27,6 @@ INITIAL_EXTENSIONS = [
     "cogs.commands.list_players",
     "cogs.commands.whois",
     "cogs.commands.owner",
-    "cogs.commands.online",
     "cogs.commands.help",
 ]
 

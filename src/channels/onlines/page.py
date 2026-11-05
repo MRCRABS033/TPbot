@@ -1,25 +1,29 @@
-import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
-from src.core.config import WATCHED_PLAYERS, logger
+from src.core.config import WATCHED_PLAYERS, WORLD, logger
 from src.shared.task_utils import resilient
-from src.shared.discord_utils import send_or_update_embed
+from src.shared.discord_utils import move_list_to_bottom, send_or_update_embed
 from services.storage import save_data
-from src.api.http import create_session
-from src.api.tibiadata import fetch_player_data, fetch_world_online_players
+from src.api import tibiadata
 from src.shared.login_times import LoginTracker, parse_api_time
 from src.shared.online_embeds import build_grouped_online_embeds
+from src.shared.vocation_thumbnails import thumbnail_files
 from src.api.tibiawiki import vocation_image_url
+from src.channels.onlines.service import OnlineService
+
+
+def _character_url(char_name):
+    return f"https://www.tibia.com/community/?subtopic=characters&name={char_name.replace(' ', '+')}"
 
 
 class WatchedTracker(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, service):
         self.bot = bot
+        self.service = service
         self.watched_embed_message = {}
-        self.logins = LoginTracker()  # Hora de ingreso de cada personaje conectado
         self.last_online_embeds = None  # Última lista generada (la usa !online)
         self.update_online_watched_players.start()
 
@@ -49,14 +53,12 @@ class WatchedTracker(commands.Cog):
             await ctx.send("✅ Revisión completada. Si alguien subió de nivel, el aviso ya está en el canal de niveles.")
             return
 
-        info = WATCHED_PLAYERS.get(character_name.strip().lower())
-        if not info:
+        check = await self.service.check_character(character_name)
+        if not check.info:
             await ctx.send(f"⚠️ El personaje **{character_name}** no está en la lista de monitoreo.")
             return
 
-        async with create_session() as session:
-            res = await fetch_player_data(session, info["char_name"])
-        char_info = (res or {}).get("character_info")
+        info, char_info = check.info, check.char_info
         if not char_info:
             await ctx.send(f"⚠️ No se pudo consultar a **{info['char_name']}** en la API de Tibia. Intenta de nuevo en un rato.")
             return
@@ -64,13 +66,10 @@ class WatchedTracker(commands.Cog):
         level = char_info.get("level", 0)
         vocation = char_info.get("vocation", "N/A")
         world = char_info.get("world", "Desconocido")
-        old_level = info.get("current_level", level)
 
-        if level != old_level:
+        if check.changed_from is not None:
             # Subió o bajó y el aviso automático aún no lo había detectado: se avisa en el canal de niveles
-            info["current_level"] = level
-            save_data()
-            embed = self._build_level_embed(info, old_level, level, vocation, world)
+            embed = self._build_level_embed(info, check.changed_from, level, vocation, world)
             level_channel = self._get_level_channel()
             if level_channel and level_channel != ctx.channel:
                 await level_channel.send(embed=embed)
@@ -87,7 +86,7 @@ class WatchedTracker(commands.Cog):
         changed = old_level is not None and new_level != old_level
         leveled_up = changed and new_level > old_level
         char_name = info["char_name"]
-        url = f"https://www.tibia.com/community/?subtopic=characters&name={char_name.replace(' ', '+')}"
+        url = _character_url(char_name)
 
         # Título corto (es lo que se ve en la notificación); el nombre enlaza a Tibia.com
         if not changed:
@@ -125,90 +124,44 @@ class WatchedTracker(commands.Cog):
         return embed
 
     @resilient
-
     @tasks.loop(seconds=60)
     async def update_online_watched_players(self):
-        world = "Quidera"
-        logger.info(f"🟢 Verificando personajes monitoreados en {world}...")
+        logger.info(f"🟢 Verificando personajes monitoreados en {WORLD}...")
 
-        if not WATCHED_PLAYERS:
+        if not self.service.has_players():
             return
 
         # Buscar el canal para alertas de nivel
         level_channel = self._get_level_channel()
 
-        async with create_session() as session:
-            online_world_players = await fetch_world_online_players(session, world)
-            online_lookup = {
-                p.get("name", "").lower(): p for p in (online_world_players or [])
-            }
+        async def notify_level_change(info, old_level, new_level, vocation):
+            # Enviar alerta si el canal existe
+            if level_channel:
+                await level_channel.send(embed=self._build_level_embed(info, old_level, new_level, vocation, WORLD))
+            logger.info(f"🎉 Alerta de nivel para {info['char_name']}: {old_level} -> {new_level}")
 
-            online_list = []
-            online_keys = set()
-            for char_key, info in WATCHED_PLAYERS.items():
-                char_name = info["char_name"]
-                owner_name = info["owner"]
+        online_list = await self.service.check_online(WORLD, notify_level_change)
 
-                if char_name.lower() in online_lookup:
-                    player_data = online_lookup[char_name.lower()]
-                    lvl = player_data.get("level", 0)
-                    voc = player_data.get("vocation", "N/A")
-                    url = f"https://www.tibia.com/community/?subtopic=characters&name={char_name.replace(' ', '+')}"
+        entries = [
+            (
+                player.level,
+                player.vocation,
+                f"**[{player.name}]({_character_url(player.name)})** · {player.owner}\n"
+                f"  Nivel {player.level} · {player.vocation} · {self.service.login_text(player.key)}",
+            )
+            for player in online_list
+        ]
+        embed = self._build_online_embeds(entries, WORLD)
+        self.last_online_embeds = embed
+        # Una sola lista que se edita (sin un mensaje por cada conexión)
+        # Siempre se edita el mismo mensaje (entre o salga alguien)
+        await send_or_update_embed(self.bot, self.watched_embed_message, CHANNEL_ONLINES, embed)
 
-                    online_keys.add(char_key)
-
-                    # --- DETECCIÓN Y ALERTA DE SUBIDA DE NIVEL ---
-                    old_level = info.get("current_level")
-
-                    if old_level is None:
-                        # Inicializar si no estaba registrado
-                        info["current_level"] = lvl
-                        save_data()
-                    elif lvl != old_level:
-                        # Subió o bajó de nivel (por ejemplo, al morir)
-                        info["current_level"] = lvl
-                        save_data()
-
-                        # Enviar alerta si el canal existe
-                        if level_channel:
-                            await level_channel.send(embed=self._build_level_embed(info, old_level, lvl, voc, world))
-
-                        logger.info(f"🎉 Alerta de nivel para {char_name}: {old_level} -> {lvl}")
-
-                    online_list.append((char_key, lvl, voc, char_name, url, owner_name))
-
-            # Hora de ingreso (si la API falló y la lista vino vacía, no se toca el estado)
-            if online_world_players:
-                last_logins = await self._api_login_times(session, online_keys) if self.logins.needs_api_times else None
-                self.logins.update(online_keys, last_logins)
-
-            entries = [
-                (lvl, voc, f"**[{name}]({url})** · {owner}\n  Nivel {lvl} · {voc} · {self.logins.text(key)}")
-                for key, lvl, voc, name, url, owner in online_list
-            ]
-            embed = self._build_online_embeds(entries, world)
-            self.last_online_embeds = embed
-            # Una sola lista que se edita (sin un mensaje por cada conexión)
-            # Siempre se edita el mismo mensaje (entre o salga alguien)
-            await send_or_update_embed(self.bot, self.watched_embed_message, CHANNEL_ONLINES, embed)
-
-    async def _api_login_times(self, session, keys):
-        """{clave: hora de ingreso} según la API (solo al arrancar el bot, para quienes ya estaban online)."""
-        semaphore = asyncio.Semaphore(5)
-
-        async def lookup(key):
-            async with semaphore:
-                res = await fetch_player_data(session, WATCHED_PLAYERS[key]["char_name"])
-            return key, parse_api_time((res or {}).get("character_info", {}).get("last_login"))
-
-        return dict(await asyncio.gather(*(lookup(k) for k in keys)))
-
-    @staticmethod
-    def _build_online_embeds(online_list, world):
+    def _build_online_embeds(self, online_list, world):
         return build_grouped_online_embeds(
             online_list,
             title="Personajes online",
-            footer=f"Mundo: {world} · Conectados: {len(online_list)} de {len(WATCHED_PLAYERS)}",
+            footer=f"Mundo: {world} · Conectados: {len(online_list)} de {self.service.player_count()}",
             color=discord.Color.green(),
             empty_text="Ningún personaje monitoreado está conectado.",
         )
@@ -218,5 +171,33 @@ class WatchedTracker(commands.Cog):
         await self.bot.wait_until_ready()
 
 
+class OnlineCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.hybrid_command(name="online", description="Muestra qué personajes monitoreados están conectados")
+    async def list_online_members(self, ctx):
+        """Muestra la lista de conectados donde se pide. En #onlines, la mueve al final del canal."""
+        logger.info(f"📩 Comando !online ejecutado por {ctx.author}")
+        in_onlines = find_channel([ctx.channel], CHANNEL_ONLINES) is not None
+        await ctx.defer(ephemeral=in_onlines)
+
+        tracker = self.bot.get_cog("WatchedTracker")
+        if not tracker:
+            await ctx.send("⚠️ El seguimiento de conectados no está activo.")
+            return
+
+        await tracker.update_online_watched_players()
+        if in_onlines:
+            # En #onlines: la lista actualizada se mueve al final del canal
+            await move_list_to_bottom(
+                ctx, self.bot, tracker.watched_embed_message, CHANNEL_ONLINES, tracker.last_online_embeds
+            )
+        else:
+            await ctx.send(embeds=tracker.last_online_embeds, files=thumbnail_files(tracker.last_online_embeds))
+
+
 async def setup(bot):
-    await bot.add_cog(WatchedTracker(bot))
+    service = OnlineService(tibiadata, WATCHED_PLAYERS, save_data, LoginTracker(), parse_api_time)
+    await bot.add_cog(WatchedTracker(bot, service))
+    await bot.add_cog(OnlineCommands(bot))

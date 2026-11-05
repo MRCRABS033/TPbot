@@ -74,7 +74,7 @@ class DeathService:
 
                 last_state = self._state[char_key]
 
-                # Los avisos de nivel los publica watched_tracker en el canal de niveles
+                # Los avisos de nivel los publica #onlines en el canal de niveles
                 self._state[char_key]["level"] = current_level
 
                 # Detección de Muerte

@@ -11,10 +11,10 @@ CHANNEL_DEATHS = "cementerio"
 # Lista automática de jugadores Free Account online (channels/frees, !free)
 CHANNEL_FREES = "frees"
 
-# Lista automática de personajes monitoreados online (watched_tracker)
+# Lista automática de personajes monitoreados online (channels/onlines)
 CHANNEL_ONLINES = "onlines"
 
-# Alertas de subida de nivel con progreso en el team (watched_tracker)
+# Alertas de subida de nivel con progreso en el team (channels/onlines)
 CHANNEL_LEVEL = "level-up"
 CHANNEL_LEVEL_ALT = "levels"  # Alternativo si no existe CHANNEL_LEVEL
 
