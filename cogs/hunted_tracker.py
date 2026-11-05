@@ -4,10 +4,10 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_HUNTEDS
-from cogs.death_tracker import DeathTracker
 from cogs.panel import HuntedPanelView
 from src.core.config import HUNTED_PLAYERS, WORLD, logger
 from src.shared.task_utils import resilient
+from src.shared.death_format import format_death_time, format_killers
 from src.shared.discord_utils import broadcast_embed, send_or_update_embed
 from src.shared.login_times import LoginTracker, parse_api_time
 from src.shared.online_embeds import build_grouped_online_embeds, player_url
@@ -181,13 +181,13 @@ class HuntedTracker(commands.Cog):
             url=player_url(data["char_name"]),
             color=discord.Color.dark_green(),
         )
-        embed.add_field(name="Fecha", value=DeathTracker._format_death_time(death.get("time")), inline=False)
+        embed.add_field(name="Fecha", value=format_death_time(death.get("time")), inline=False)
         if killers:
-            embed.add_field(name="Asesinos", value=DeathTracker._format_killers(killers, {}), inline=False)
+            embed.add_field(name="Asesinos", value=format_killers(killers, {}), inline=False)
         else:
             embed.add_field(name="Causa", value=death.get("reason", "Desconocida"), inline=False)
         if death.get("assists"):
-            embed.add_field(name="Asistencias", value=DeathTracker._format_killers(death["assists"], {}), inline=False)
+            embed.add_field(name="Asistencias", value=format_killers(death["assists"], {}), inline=False)
         embed.set_thumbnail(url=vocation_image_url(char_info.get("vocation", data.get("vocation", ""))))
         embed.set_footer(text=f"Mundo: {char_info.get('world', data.get('world', 'Desconocido'))}")
         return embed

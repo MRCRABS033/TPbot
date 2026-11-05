@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import discord
 
 from src.core.channel_names import CHANNEL_DEATHS, find_channel
-from cogs.death_tracker import DeathTracker
+from src.channels.cementerio.page import DeathTracker, build_service
 from src.core.config import TOKEN, WATCHED_PLAYERS, logger
 from services.storage import load_data
 from src.api.http import create_session
@@ -116,6 +116,7 @@ async def on_ready():
     # Instancia el cog sin arrancar sus tareas automáticas
     tracker = DeathTracker.__new__(DeathTracker)
     tracker.bot = client
+    tracker.service = build_service()
 
     async with create_session() as session:
         res = await fetch_player_data(session, victim["char_name"])

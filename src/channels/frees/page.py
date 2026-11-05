@@ -30,7 +30,7 @@ class FreeTracker(commands.Cog):
     @resilient
     @tasks.loop(seconds=60)
     async def update_free_players(self):
-        logger.info(f"🔄 Consultando Free Accounts online en {WORLD}...")
+        logger.info(f"Consultando Free Accounts online en {WORLD}...")
         free_players = await self.service.get_free_players(WORLD)
 
         self.last_list_embed = self._build_list_embeds(free_players, WORLD)

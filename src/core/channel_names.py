@@ -5,7 +5,7 @@
 # Avisos de registro y subida de nivel (death_tracker)
 CHANNEL_TPBOT = "tpbot"
 
-# Avisos de muertes (death_tracker)
+# Avisos de muertes (channels/cementerio)
 CHANNEL_DEATHS = "cementerio"
 
 # Lista automática de jugadores Free Account online (channels/frees, !free)
