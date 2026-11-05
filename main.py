@@ -4,7 +4,6 @@ from discord.ext import commands
 
 from src.core.config import MONGODB_URI, TOKEN, logger
 from src.data.database import Database
-from services.storage import load_data, load_hunteds
 from src.shared.vocation_thumbnails import load_vocation_thumbnails
 
 intents = discord.Intents.default()
@@ -44,10 +43,6 @@ async def main():
         raise ValueError("Falta MONGODB_URI en el archivo .env")
     bot.data = Database(MONGODB_URI)
     await bot.data.prepare()
-
-    # 1. Cargar personajes guardados desde el JSON
-    load_data()
-    load_hunteds()
 
     async with bot:
         for extension in INITIAL_EXTENSIONS:

@@ -70,6 +70,9 @@ class BotLoadTests(unittest.IsolatedAsyncioTestCase):
                 for attribute in attributes:
                     self.assertTrue(hasattr(cog, attribute), f"{cog_name}.{attribute}")
 
+            # Canal real, sin el Mongo real: lo que usa cada cog sale de bot.data
+            self.assertIs(bot.get_cog("Panel").guilds, bot.data.guilds)
+
             online = bot.get_cog("WatchedTracker")
             self.assertTrue(hasattr(online, "watched_embed_message"))
             self.assertEqual(len(bot.persistent_views), 5)  # Panel, hunteds, bosses, criatura boosted y bazaar

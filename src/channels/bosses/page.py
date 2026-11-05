@@ -22,7 +22,7 @@ from src.channels.bosses.embeds import (
 )
 from src.channels.bosses.service import BossService
 from src.core.channel_names import CHANNEL_ANUNCIOS, CHANNEL_BOSSES, find_channel
-from src.core.config import WATCHED_PLAYERS, logger
+from src.core.config import logger
 from src.shared.creature_info import fetch_creature_info
 from src.shared.discord_utils import _get_previous_message
 from src.shared.panel_ui import MAX_SELECT_OPTIONS
@@ -46,7 +46,7 @@ class ActivityModal(discord.ui.Modal, title="Crear actividad"):
     async def on_submit(self, interaction: discord.Interaction):
         view = self.activity_view
         service = view.service
-        participants = service.participants(view.selected_keys())
+        participants = await service.participants(interaction.guild_id, view.selected_keys())
 
         channel = find_channel(interaction.guild.text_channels, CHANNEL_ANUNCIOS) if interaction.guild else None
         if not channel:
@@ -83,13 +83,12 @@ class ParticipantSelect(discord.ui.Select):
 class GroupActivityView(discord.ui.View):
     """Menús con los personajes del grupo + botón para crear la actividad (solo lo ve quien lo pidió)."""
 
-    def __init__(self, service, boss, origin: discord.Interaction):
+    def __init__(self, service, boss, origin: discord.Interaction, players):
         super().__init__(timeout=600)
         self.service = service
         self.boss = boss
         self.origin = origin
 
-        players = service.sorted_players()
         options = [
             discord.SelectOption(
                 label=data["char_name"][:100],
@@ -128,12 +127,13 @@ class BossCardView(discord.ui.View):
             await interaction.response.send_message("⚠️ Aún no se conoce el boss de hoy. Intenta en un momento.",
                                                     ephemeral=True)
             return
-        if not self.service.has_players():
+        players = await self.service.sorted_players(interaction.guild_id)
+        if not players:
             await interaction.response.send_message("⚠️ El grupo no tiene personajes todavía.", ephemeral=True)
             return
         await interaction.response.send_message(
             f"**{boss['name']}** · Elige quiénes participan y pulsa **Crear actividad**.",
-            view=GroupActivityView(self.service, boss, interaction),
+            view=GroupActivityView(self.service, boss, interaction, players),
             ephemeral=True,
         )
 
@@ -187,41 +187,48 @@ class BossTracker(commands.Cog):
             return
 
         for guild in self.bot.guilds:
-            channel = find_channel(guild.text_channels, CHANNEL_BOSSES)
-            if not channel:
-                continue
-            msg = await _get_previous_message(self.bot, channel, self.card_message, guild.id, CARD_MARKER)
+            try:
+                await self._update_guild(guild, refreshed)
+            except Exception:
+                logger.exception(f"❌ Error al publicar la tarjeta en {guild.name} ({guild.id})")
 
-            # Se compara con la tarjeta que ya está en el canal (no con la memoria del bot), así un
-            # reinicio no cuenta como "boss nuevo" ni vuelve a publicar la misma tarjeta
-            card_boss = msg.embeds[0].title if msg and msg.embeds else None
-            new_boss = card_boss != service.current_boss["name"]
-            is_last = msg is not None and channel.last_message_id == msg.id
-            # ¿La tarjeta salió sin imagen propia y ahora sí la tenemos? (la imagen del embed queda en el CDN de
-            # Discord; ojo: msg.attachments viene vacío cuando el archivo se usa dentro del embed)
-            card_image = (msg.embeds[0].image.url or "") if msg and msg.embeds else ""
-            image_fixed = (refreshed and not new_boss and card_boss is not None and service.image is not None
-                           and "discordapp" not in card_image)
-            # ¿La tarjeta es de una versión anterior del bot (otros botones)? Se reemplaza por la actual
-            card_buttons = {c.custom_id for row in (msg.components if msg else []) for c in row.children}
-            outdated = msg is not None and card_buttons != CARD_BUTTON_IDS
-            if msg and not new_boss and is_last and not image_fixed and not outdated:
-                continue  # Misma tarjeta, al día y al final del canal: no hay nada que hacer
+    async def _update_guild(self, guild, refreshed):
+        service = self.service
+        channel = find_channel(guild.text_channels, CHANNEL_BOSSES)
+        if not channel:
+            return
+        msg = await _get_previous_message(self.bot, channel, self.card_message, guild.id, CARD_MARKER)
 
-            if msg:
-                try:
-                    await msg.delete()
-                except discord.HTTPException:
-                    pass
-            image_url, file = boss_media(service)
-            new_msg = await channel.send(
-                **_send_kwargs(build_boss_card(service.current_boss, image_url, service.info), file,
-                               view=BossCardView(service)),
-                silent=not new_boss,  # Solo notifica cuando hay un boss nuevo
-            )
-            self.card_message[guild.id] = new_msg.id
-            if new_boss:
-                logger.info(f"👑 Tarjeta del boss {service.current_boss['name']} publicada en {guild.name}")
+        # Se compara con la tarjeta que ya está en el canal (no con la memoria del bot), así un
+        # reinicio no cuenta como "boss nuevo" ni vuelve a publicar la misma tarjeta
+        card_boss = msg.embeds[0].title if msg and msg.embeds else None
+        new_boss = card_boss != service.current_boss["name"]
+        is_last = msg is not None and channel.last_message_id == msg.id
+        # ¿La tarjeta salió sin imagen propia y ahora sí la tenemos? (la imagen del embed queda en el CDN de
+        # Discord; ojo: msg.attachments viene vacío cuando el archivo se usa dentro del embed)
+        card_image = (msg.embeds[0].image.url or "") if msg and msg.embeds else ""
+        image_fixed = (refreshed and not new_boss and card_boss is not None and service.image is not None
+                       and "discordapp" not in card_image)
+        # ¿La tarjeta es de una versión anterior del bot (otros botones)? Se reemplaza por la actual
+        card_buttons = {c.custom_id for row in (msg.components if msg else []) for c in row.children}
+        outdated = msg is not None and card_buttons != CARD_BUTTON_IDS
+        if msg and not new_boss and is_last and not image_fixed and not outdated:
+            return  # Misma tarjeta, al día y al final del canal: no hay nada que hacer
+
+        if msg:
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
+        image_url, file = boss_media(service)
+        new_msg = await channel.send(
+            **_send_kwargs(build_boss_card(service.current_boss, image_url, service.info), file,
+                           view=BossCardView(service)),
+            silent=not new_boss,  # Solo notifica cuando hay un boss nuevo
+        )
+        self.card_message[guild.id] = new_msg.id
+        if new_boss:
+            logger.info(f"👑 Tarjeta del boss {service.current_boss['name']} publicada en {guild.name}")
 
     @update_boss_card.before_loop
     async def before_update(self):
@@ -242,5 +249,5 @@ class BossTracker(commands.Cog):
 
 
 async def setup(bot):
-    service = BossService(tibiadata, tibiawiki, fetch_creature_info, WATCHED_PLAYERS)
+    service = BossService(tibiadata, tibiawiki, fetch_creature_info, bot.data.players)
     await bot.add_cog(BossTracker(bot, service))

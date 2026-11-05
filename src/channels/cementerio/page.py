@@ -4,8 +4,9 @@ import discord
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_DEATHS, find_channel
-from src.core.config import PLAYERS_STATE, WATCHED_PLAYERS, logger
+from src.core.config import logger
 from src.shared.death_format import format_death_time, format_killers
+from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.task_utils import resilient
 from src.api import tibiadata, tibiawiki
 from src.channels.cementerio.service import DeathService
@@ -17,9 +18,10 @@ MAX_DEATHS_LISTED = 10
 
 
 class DeathTracker(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
         self.track_tibia_players.start()
 
     def cog_unload(self):
@@ -30,15 +32,23 @@ class DeathTracker(commands.Cog):
     async def track_tibia_players(self):
         logger.info("🔄 === Verificando niveles y muertes de personajes monitoreados ===")
 
-        await self.service.check_players(self._notify_death)
+        await for_each_configured_guild(self.bot, self.guilds, self._check_guild)
+
+    async def _check_guild(self, guild, world):
+        async def notify(*death):
+            await self._notify_death(guild, *death)
+
+        await self.service.check_players(guild.id, notify)
 
     # --- COMANDO: MUERTES DE HOY ---
     @commands.hybrid_command(name="muertes", description="Muestra las muertes de hoy de los personajes del grupo")
     async def deaths_today(self, ctx):
         logger.info(f"📩 Comando !muertes ejecutado por {ctx.author}")
+        if not await require_world(ctx, self.guilds):
+            return
         await ctx.defer()
 
-        result = await self.service.deaths_today()
+        result = await self.service.deaths_today(ctx.guild.id)
         deaths = result.entries
 
         footer = f"{result.checked} personajes revisados"
@@ -86,15 +96,11 @@ class DeathTracker(commands.Cog):
         embed.set_thumbnail(url="attachment://thumbnail.gif")
         return {"embed": embed, "file": discord.File(io.BytesIO(thumbnail), filename="thumbnail.gif")}
 
-    async def _broadcast_embed(self, embed: discord.Embed, channel_name: str = CHANNEL_DEATHS, thumbnail: bytes = None):
-        for guild in self.bot.guilds:
-            channel = find_channel(guild.text_channels, channel_name)
-            if channel:
-                await channel.send(**self._message_kwargs(embed, thumbnail))
-
-    async def _notify_death(self, tibia_link, owner, level, char_info, death_info):
+    async def _notify_death(self, guild, tibia_link, owner, level, char_info, death_info):
         embed, thumbnail = await self._build_death_message(tibia_link, owner, level, char_info, death_info)
-        await self._broadcast_embed(embed, CHANNEL_DEATHS, thumbnail)
+        channel = find_channel(guild.text_channels, CHANNEL_DEATHS)
+        if channel:
+            await channel.send(**self._message_kwargs(embed, thumbnail))
 
     async def _build_death_message(self, tibia_link, owner, level, char_info, death_info):
         """Aviso de muerte (embed + imagen del asesino). Lo usan #cementerio y !muertes."""
@@ -142,9 +148,9 @@ class DeathTracker(commands.Cog):
         return name, f"https://www.tibia.com/community/?subtopic=characters&name={name.replace(' ', '+')}"
 
 
-def build_service():
-    return DeathService(tibiadata, tibiawiki, WATCHED_PLAYERS, PLAYERS_STATE)
+def build_service(database):
+    return DeathService(tibiadata, tibiawiki, database.players)
 
 
 async def setup(bot):
-    await bot.add_cog(DeathTracker(bot, build_service()))
+    await bot.add_cog(DeathTracker(bot, build_service(bot.data), bot.data.guilds))

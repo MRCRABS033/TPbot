@@ -4,9 +4,9 @@ import discord
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_channel
-from src.core.config import WATCHED_PLAYERS, logger
+from src.core.config import logger
+from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.task_utils import resilient
-from services.storage import save_data
 from src.channels.empleado.service import EmpleadoService, is_server_save, is_weekly_reset_day
 
 # --- PUBLICACIÓN AUTOMÁTICA DEL RANKING ---
@@ -19,9 +19,10 @@ RANKING_TIMES = [
 
 
 class WatchedPlayers(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
         # Último ranking diario y último anuncio del ganador por servidor (la limpieza los conserva)
         self.ranking_messages = {}
         self.winner_messages = {}
@@ -32,10 +33,11 @@ class WatchedPlayers(commands.Cog):
         self.check_server_save.cancel()
         self.post_daily_ranking.cancel()
 
-    def _get_empleado_channel(self):
-        channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO)
+    @staticmethod
+    def _get_empleado_channel(guild):
+        channel = find_channel(guild.text_channels, CHANNEL_EMPLEADO)
         if not channel:
-            channel = find_channel(self.bot.get_all_channels(), CHANNEL_EMPLEADO_ALT)
+            channel = find_channel(guild.text_channels, CHANNEL_EMPLEADO_ALT)
         return channel
 
     # --- COMANDO PARA VER LA TABLA ACTUAL ---
@@ -43,25 +45,30 @@ class WatchedPlayers(commands.Cog):
     async def show_weekly_top(self, ctx):
         """Muestra el ranking actual de la semana."""
         logger.info(f"📩 Comando !empleado ejecutado por {ctx.author}")
-        if not self.service.has_players():
+        if not await require_world(ctx, self.guilds):
+            return
+        if not await self.service.has_players(ctx.guild.id):
             await ctx.send("📋 La lista de seguimiento está vacía.")
             return
 
-        await ctx.send(embed=await self._build_ranking_embed())
+        await ctx.send(embed=await self._build_ranking_embed(ctx.guild.id))
 
     # --- TAREA: PUBLICA EL RANKING TODOS LOS DÍAS A LAS 12 A. M. Y 12 P. M. ---
     @resilient
     @tasks.loop(time=RANKING_TIMES)
     async def post_daily_ranking(self):
-        if not self.service.has_players():
+        await for_each_configured_guild(self.bot, self.guilds, self._post_ranking)
+
+    async def _post_ranking(self, guild, world):
+        if not await self.service.has_players(guild.id):
             return
 
-        channel = self._get_empleado_channel()
+        channel = self._get_empleado_channel(guild)
         if not channel:
-            logger.warning(f"⚠️ No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}' para el ranking diario.")
+            logger.warning(f"⚠️ No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}' en {guild.name} para el ranking diario.")
             return
 
-        msg = await channel.send(embed=await self._build_ranking_embed())
+        msg = await channel.send(embed=await self._build_ranking_embed(guild.id))
         self.ranking_messages[channel.guild.id] = msg.id
         logger.info(f"🏆 Ranking diario publicado en #{channel.name}")
 
@@ -86,8 +93,8 @@ class WatchedPlayers(commands.Cog):
     def _niveles(n):
         return "nivel" if n == 1 else "niveles"
 
-    async def _build_ranking_embed(self):
-        ranking = self.service.ranking()
+    async def _build_ranking_embed(self, guild_id):
+        ranking = await self.service.ranking(guild_id)
 
         embed = discord.Embed(
             title="🏆 Empleado del mes",
@@ -152,16 +159,16 @@ class WatchedPlayers(commands.Cog):
             logger.info("⏰ Hora de Server Save detectada.")
 
             if is_weekly_reset_day(now):
-                await self.announce_weekly_winner()
+                await for_each_configured_guild(self.bot, self.guilds, self.announce_weekly_winner)
                 await asyncio.sleep(60)
 
-    async def announce_weekly_winner(self):
-        channel = self._get_empleado_channel()
+    async def announce_weekly_winner(self, guild, world=None):
+        channel = self._get_empleado_channel(guild)
         if not channel:
-            logger.warning(f"⚠️ No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}' en Discord.")
+            logger.warning(f"⚠️ No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}' en {guild.name}.")
             return
 
-        ranking = self.service.close_week()
+        ranking = await self.service.close_week(guild.id)
         if not ranking:
             return
 
@@ -184,4 +191,4 @@ class WatchedPlayers(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(WatchedPlayers(bot, EmpleadoService(WATCHED_PLAYERS, save_data)))
+    await bot.add_cog(WatchedPlayers(bot, EmpleadoService(bot.data.players), bot.data.guilds))

@@ -31,7 +31,7 @@ class RemoveSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         logger.info(f"🎛️ Panel: {interaction.user} elimina '{self.values[0]}'")
-        result = self.remove_func(self.values[0])
+        result = await self.remove_func(self.values[0])
         await interaction.response.edit_message(content="Listo.", view=None)
         await interaction.followup.send(embed=result)
 

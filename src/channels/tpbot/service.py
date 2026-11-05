@@ -12,37 +12,37 @@ class AddedMember:
 
 
 class GroupService:
-    def __init__(self, api, players, state, save, session_factory=create_session):
+    def __init__(self, api, players, guilds, session_factory=create_session):
         self._api = api
         self._players = players
-        self._state = state
-        self._save = save
+        self._guilds = guilds
         self._session_factory = session_factory
 
-    @property
-    def players(self):
-        return self._players
+    async def all(self, guild_id):
+        return await self._players.for_guild(guild_id).all()
 
-    def has_players(self):
-        return bool(self._players)
+    async def player_count(self, guild_id):
+        return await self._players.for_guild(guild_id).count()
 
-    def player_count(self):
-        return len(self._players)
+    async def owner_count(self, guild_id):
+        return len({d["owner"] for d in (await self.all(guild_id)).values()})
 
-    def owner_count(self):
-        return len({d["owner"] for d in self._players.values()})
+    async def get(self, guild_id, character_name):
+        return await self._players.for_guild(guild_id).get(character_name.strip().lower())
 
-    def get(self, character_name):
-        return self._players.get(character_name.strip().lower())
+    async def team_name(self, guild_id, default):
+        """Nombre del equipo en las gráficas: el configurado o, si no hay, `default`."""
+        return await self._guilds.team_name(guild_id) or default
 
-    def by_owner(self):
+    async def by_owner(self, guild_id):
         """{ dueño: [personajes de mayor a menor nivel] }."""
         grouped = {}
-        for data in sorted(self._players.values(), key=lambda d: d.get("current_level", 0), reverse=True):
+        players = await self.all(guild_id)
+        for data in sorted(players.values(), key=lambda d: d.get("current_level", 0), reverse=True):
             grouped.setdefault(data["owner"], []).append(data)
         return grouped
 
-    async def add(self, owner, character_name):
+    async def add(self, guild_id, owner, character_name):
         """Agrega o actualiza un personaje. Devuelve None si no existe en Tibia.com."""
         owner = owner.strip()
         async with self._session_factory() as session:
@@ -50,13 +50,14 @@ class GroupService:
         if not res or not res.get("character_info"):
             return None
 
+        repository = self._players.for_guild(guild_id)
         char_info = res["character_info"]
         level = char_info.get("level", 0)
         key = res["official_name"].lower()
 
-        # Si el personaje ya existía, se conservan sus niveles históricos
-        existing = self._players.get(key, {})
-        self._players[key] = {
+        # Si el personaje ya existía, se conservan sus niveles históricos y su última muerte conocida
+        existing = await repository.get(key) or {}
+        data = {
             "char_name": res["official_name"],
             "tibia_link": res["tibia_link"],
             "owner": owner,
@@ -65,15 +66,11 @@ class GroupService:
             "current_level": level,
             "vocation": char_info.get("vocation", "N/A"),
         }
-        self._save()
-        return AddedMember(self._players[key], char_info, existed=bool(existing))
+        if "last_death_time" in existing:
+            data["last_death_time"] = existing["last_death_time"]
+        await repository.put(key, data)
+        return AddedMember(data, char_info, existed=bool(existing))
 
-    def remove(self, character_name):
+    async def remove(self, guild_id, character_name):
         """Devuelve los datos del personaje eliminado, o None si no estaba en el grupo."""
-        key = character_name.strip().lower()
-        data = self._players.pop(key, None)
-        if not data:
-            return None
-        self._state.pop(key, None)
-        self._save()
-        return data
+        return await self._players.for_guild(guild_id).remove(character_name.strip().lower())

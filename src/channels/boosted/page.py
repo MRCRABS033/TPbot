@@ -148,41 +148,48 @@ class CreatureBoostedTracker(commands.Cog):
             return
 
         for guild in self.bot.guilds:
-            channel = find_channel(guild.text_channels, CHANNEL_BOOSTED_CREATURE)
-            if not channel:
-                continue
-            msg = await _get_previous_message(self.bot, channel, self.card_message, guild.id, CARD_MARKER)
+            try:
+                await self._update_guild(guild, refreshed)
+            except Exception:
+                logger.exception(f"❌ Error al publicar la tarjeta en {guild.name} ({guild.id})")
 
-            # Se compara con la tarjeta que ya está en el canal (no con la memoria del bot), así un
-            # reinicio no cuenta como "criatura nueva" ni vuelve a publicar la misma tarjeta
-            card_creature = msg.embeds[0].title if msg and msg.embeds else None
-            new_creature = card_creature != service.current_creature["name"]
-            is_last = msg is not None and channel.last_message_id == msg.id
-            # ¿La tarjeta salió sin imagen propia y ahora sí la tenemos? (la imagen del embed queda en el CDN de
-            # Discord; ojo: msg.attachments viene vacío cuando el archivo se usa dentro del embed)
-            card_image = (msg.embeds[0].image.url or "") if msg and msg.embeds else ""
-            image_fixed = (refreshed and not new_creature and card_creature is not None and service.image is not None
-                           and "discordapp" not in card_image)
-            # ¿La tarjeta es de una versión anterior del bot (otros botones)? Se reemplaza por la actual
-            card_buttons = {c.custom_id for row in (msg.components if msg else []) for c in row.children}
-            outdated = msg is not None and card_buttons != CARD_BUTTON_IDS
-            if msg and not new_creature and is_last and not image_fixed and not outdated:
-                continue  # Misma tarjeta, al día y al final del canal: no hay nada que hacer
+    async def _update_guild(self, guild, refreshed):
+        service = self.service
+        channel = find_channel(guild.text_channels, CHANNEL_BOOSTED_CREATURE)
+        if not channel:
+            return
+        msg = await _get_previous_message(self.bot, channel, self.card_message, guild.id, CARD_MARKER)
 
-            if msg:
-                try:
-                    await msg.delete()
-                except discord.HTTPException:
-                    pass
-            image_url, file = creature_media(service)
-            new_msg = await channel.send(
-                **_send_kwargs(build_creature_card(service.current_creature, image_url, service.info), file,
-                               view=CreatureCardView(service)),
-                silent=not new_creature,  # Solo notifica cuando hay una criatura nueva
-            )
-            self.card_message[guild.id] = new_msg.id
-            if new_creature:
-                logger.info(f"🐾 Tarjeta de {service.current_creature['name']} publicada en {guild.name}")
+        # Se compara con la tarjeta que ya está en el canal (no con la memoria del bot), así un
+        # reinicio no cuenta como "criatura nueva" ni vuelve a publicar la misma tarjeta
+        card_creature = msg.embeds[0].title if msg and msg.embeds else None
+        new_creature = card_creature != service.current_creature["name"]
+        is_last = msg is not None and channel.last_message_id == msg.id
+        # ¿La tarjeta salió sin imagen propia y ahora sí la tenemos? (la imagen del embed queda en el CDN de
+        # Discord; ojo: msg.attachments viene vacío cuando el archivo se usa dentro del embed)
+        card_image = (msg.embeds[0].image.url or "") if msg and msg.embeds else ""
+        image_fixed = (refreshed and not new_creature and card_creature is not None and service.image is not None
+                       and "discordapp" not in card_image)
+        # ¿La tarjeta es de una versión anterior del bot (otros botones)? Se reemplaza por la actual
+        card_buttons = {c.custom_id for row in (msg.components if msg else []) for c in row.children}
+        outdated = msg is not None and card_buttons != CARD_BUTTON_IDS
+        if msg and not new_creature and is_last and not image_fixed and not outdated:
+            return  # Misma tarjeta, al día y al final del canal: no hay nada que hacer
+
+        if msg:
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
+        image_url, file = creature_media(service)
+        new_msg = await channel.send(
+            **_send_kwargs(build_creature_card(service.current_creature, image_url, service.info), file,
+                           view=CreatureCardView(service)),
+            silent=not new_creature,  # Solo notifica cuando hay una criatura nueva
+        )
+        self.card_message[guild.id] = new_msg.id
+        if new_creature:
+            logger.info(f"🐾 Tarjeta de {service.current_creature['name']} publicada en {guild.name}")
 
     @update_creature.before_loop
     async def before_update(self):

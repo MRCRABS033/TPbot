@@ -35,23 +35,22 @@ def _sorted(entries):
 
 
 class EmpleadoService:
-    def __init__(self, players, save, now=lambda: datetime.now(SERVER_SAVE_TZ)):
+    def __init__(self, players, now=lambda: datetime.now(SERVER_SAVE_TZ)):
         self._players = players
-        self._save = save
         self.now = now
 
-    def has_players(self):
-        return bool(self._players)
+    async def has_players(self, guild_id):
+        return await self._players.for_guild(guild_id).count() > 0
 
-    def ranking(self):
+    async def ranking(self, guild_id):
         """Personajes de más a menos niveles ganados en la semana actual."""
-        return _sorted(_entry(data) for data in self._players.values())
+        players = await self._players.for_guild(guild_id).all()
+        return _sorted(_entry(data) for data in players.values())
 
-    def close_week(self):
+    async def close_week(self, guild_id):
         """Devuelve el ranking final de la semana y reinicia los contadores para la siguiente."""
-        entries = []
-        for data in self._players.values():
-            entries.append(_entry(data))
-            data["weekly_start_level"] = data.get("current_level", 0)
-        self._save()
-        return _sorted(entries)
+        repository = self._players.for_guild(guild_id)
+        players = await repository.all()
+        for key, data in players.items():
+            await repository.update(key, weekly_start_level=data.get("current_level", 0))
+        return _sorted(_entry(data) for data in players.values())

@@ -1,6 +1,6 @@
 """
 Envía avisos de muerte de PRUEBA al canal de muertes (CHANNEL_DEATHS) usando
-el mismo código del bot, y se cierra solo.
+el mismo código del bot, y se cierra solo. Usa los personajes del primer servidor con ese canal.
 
 Uso (desde la carpeta del proyecto):
     python scripts/test_canales.py
@@ -22,13 +22,12 @@ import discord
 
 from src.core.channel_names import CHANNEL_DEATHS, find_channel
 from src.channels.cementerio.page import DeathTracker, build_service
-from src.core.config import TOKEN, WATCHED_PLAYERS, logger
-from services.storage import load_data
+from src.core.config import MONGODB_URI, TOKEN, logger
+from src.data.database import Database
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data, fetch_world_online_players
 from src.api.tibiawiki import VOCATION_OUTFITS
 
-WORLD = "Quidera"
 MODE = sys.argv[1].lower() if len(sys.argv) > 1 else "basico"
 
 intents = discord.Intents.default()
@@ -47,29 +46,29 @@ def fake_pvp_death(victim, killer_name, assist_name=None):
     }
 
 
-async def test_basico(tracker, victim, char_info, deaths):
+async def test_basico(tracker, guild, players, victim, char_info, deaths):
     # 1. Última muerte real (normalmente contra un monstruo)
     if deaths:
-        await tracker._notify_death(victim["tibia_link"], victim["owner"], victim.get("current_level", 0), char_info, deaths[0])
+        await tracker._notify_death(guild, victim["tibia_link"], victim["owner"], victim.get("current_level", 0), char_info, deaths[0])
         logger.info(f"🧪 Enviada la última muerte real de {victim['char_name']}: {deaths[0].get('reason')}")
     else:
         logger.warning(f"⚠️ {victim['char_name']} no tiene muertes recientes en la API; se omite la prueba 1.")
 
     # 2. Muerte PvP falsa con otro personaje monitoreado como asesino
-    others = [p for p in WATCHED_PLAYERS.values() if p is not victim]
+    others = [p for p in players.values() if p["char_name"] != victim["char_name"]]
     if not others:
         logger.warning("⚠️ Se necesitan al menos 2 personajes monitoreados para la prueba PvP.")
         return
     killer = others[0]
     assist = others[1] if len(others) > 1 else None
     assist_name = assist["char_name"] if assist else None
-    await tracker._notify_death(victim["tibia_link"], victim["owner"], victim.get("current_level", 0), char_info, fake_pvp_death(victim, killer["char_name"], assist_name))
+    await tracker._notify_death(guild, victim["tibia_link"], victim["owner"], victim.get("current_level", 0), char_info, fake_pvp_death(victim, killer["char_name"], assist_name))
     logger.info(f"🧪 Enviada muerte PvP falsa (asesino: {killer['char_name']}, {killer.get('vocation')} | asistencia: {assist_name})")
 
 
-async def test_vocaciones(tracker, victim, char_info):
+async def test_vocaciones(tracker, guild, world, victim, char_info):
     async with create_session() as session:
-        online = await fetch_world_online_players(session, WORLD)
+        online = await fetch_world_online_players(session, world)
 
     # Un jugador online por cada vocación base (+ "sin vocación")
     wanted = list(VOCATION_OUTFITS) + ["none"]
@@ -82,24 +81,17 @@ async def test_vocaciones(tracker, victim, char_info):
     for key in wanted:
         player = found.get(key)
         if not player:
-            logger.warning(f"⚠️ No hay ningún jugador '{key}' online en {WORLD} ahora mismo; se omite.")
+            logger.warning(f"⚠️ No hay ningún jugador '{key}' online en {world} ahora mismo; se omite.")
             continue
         # Asistencia: otro jugador online distinto del asesino
         assist = next((p for p in online if p["name"] != player["name"]), None)
         assist_name = assist["name"] if assist else None
-        await tracker._notify_death(victim["tibia_link"], victim["owner"], victim.get("current_level", 0), char_info, fake_pvp_death(victim, player["name"], assist_name))
+        await tracker._notify_death(guild, victim["tibia_link"], victim["owner"], victim.get("current_level", 0), char_info, fake_pvp_death(victim, player["name"], assist_name))
         logger.info(f"🧪 Enviada muerte PvP falsa ({key}): asesino {player['name']} ({player.get('vocation')}) | asistencia: {assist_name}")
 
 
 @client.event
 async def on_ready():
-    load_data()
-    victim = next(iter(WATCHED_PLAYERS.values()), None)
-    if not victim:
-        logger.error("❌ No hay personajes monitoreados para la prueba.")
-        await client.close()
-        return
-
     if not client.guilds:
         logger.error("❌ El bot no está en ningún servidor. Invítalo primero.")
         await client.close()
@@ -116,20 +108,30 @@ async def on_ready():
     # Instancia el cog sin arrancar sus tareas automáticas
     tracker = DeathTracker.__new__(DeathTracker)
     tracker.bot = client
-    tracker.service = build_service()
+    database = Database(MONGODB_URI)
+    tracker.service = build_service(database)
+    guild = targets[0]
+    world = await database.guilds.world(guild.id) or "Quidera"
+    players = await database.players.for_guild(guild.id).all()
+    victim = next(iter(players.values()), None)
+    if not victim:
+        logger.error(f"❌ {guild.name} no tiene personajes monitoreados para la prueba.")
+        await database.close()
+        await client.close()
+        return
 
     async with create_session() as session:
         res = await fetch_player_data(session, victim["char_name"])
-    char_info = (res or {}).get("character_info", {"world": WORLD})
+    char_info = (res or {}).get("character_info", {"world": world})
     deaths = (res or {}).get("deaths", [])
 
     if MODE == "vocaciones":
-        await test_vocaciones(tracker, victim, char_info)
+        await test_vocaciones(tracker, guild, world, victim, char_info)
     else:
-        await test_basico(tracker, victim, char_info, deaths)
+        await test_basico(tracker, guild, players, victim, char_info, deaths)
 
-    for guild in targets:
-        logger.info(f"🧪 Avisos enviados a #{CHANNEL_DEATHS} en '{guild.name}'")
+    logger.info(f"🧪 Avisos enviados a #{CHANNEL_DEATHS} en '{guild.name}'")
+    await database.close()
     await client.close()
 
 

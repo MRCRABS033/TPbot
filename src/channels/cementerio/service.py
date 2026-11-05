@@ -29,26 +29,25 @@ def parse_time(time_str):
 
 
 class DeathService:
-    def __init__(self, api, wiki, players, state, session_factory=create_session,
+    def __init__(self, api, wiki, players, session_factory=create_session,
                  now=lambda: datetime.now(LOCAL_TZ), pause_seconds=0.5):
         self._api = api
         self._wiki = wiki
-        self._players = players  # { char_key: { "char_name", "owner", ... } }
-        self._state = state      # { char_key: { "level", "last_death_time" } }
+        self._players = players
         self._session_factory = session_factory
         self._now = now
         self._pause_seconds = pause_seconds
 
-    async def check_players(self, on_death):
+    async def check_players(self, guild_id, on_death):
         """
         Revisa a los personajes monitoreados y llama a
         on_death(tibia_link, owner, level, char_info, death) por cada muerte nueva.
         La muerte se marca como vista después de avisar: si el aviso falla, se reintenta en la siguiente revisión.
         """
-        if not self._players:
+        repository = self._players.for_guild(guild_id)
+        current_entries = list((await repository.all()).items())
+        if not current_entries:
             return
-
-        current_entries = list(self._players.items())
 
         async with self._session_factory() as session:
             for char_key, info in current_entries:
@@ -65,31 +64,23 @@ class DeathService:
                 tibia_link = res.get("tibia_link", char_name)
 
                 # Registro inicial silencioso: solo se guarda el punto de partida
-                if char_key not in self._state:
-                    self._state[char_key] = {
-                        "level": current_level,
-                        "last_death_time": deaths[0]["time"] if deaths else None,
-                    }
+                if "last_death_time" not in info:
+                    await repository.update(char_key, last_death_time=deaths[0]["time"] if deaths else None)
                     continue
 
-                last_state = self._state[char_key]
-
-                # Los avisos de nivel los publica #onlines en el canal de niveles
-                self._state[char_key]["level"] = current_level
-
                 # Detección de Muerte
-                if deaths and deaths[0]["time"] != last_state["last_death_time"]:
+                if deaths and deaths[0]["time"] != info["last_death_time"]:
                     latest_death = deaths[0]
                     await on_death(tibia_link, owner_name, current_level, char_info, latest_death)
-                    self._state[char_key]["last_death_time"] = latest_death["time"]
+                    await repository.update(char_key, last_death_time=latest_death["time"])
 
                 await asyncio.sleep(self._pause_seconds)
 
-    async def deaths_today(self):
+    async def deaths_today(self, guild_id):
         """Muertes de hoy (hora local) de todos los personajes monitoreados."""
         today = self._now().date()
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LOOKUPS)
-        players = list(self._players.values())
+        players = list((await self._players.for_guild(guild_id).all()).values())
 
         async with self._session_factory() as session:
             async def lookup(name):

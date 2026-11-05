@@ -49,24 +49,29 @@ CHANNELS_TO_CLEAN = [
 
 
 class Cleanup(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, guilds):
         self.bot = bot
+        self.guilds = guilds
         self.clean_channels.start()
 
     def cog_unload(self):
         self.clean_channels.cancel()
 
     @resilient
-
     @tasks.loop(time=CLEANUP_TIMES)
     async def clean_channels(self):
-        """Limpia los canales del bot. Devuelve { nombre_del_canal: mensajes_borrados }."""
+        # Solo en servidores configurados: en otros, un canal con el mismo nombre podría no ser del bot
+        worlds = await self.guilds.worlds()
+        await self._clean([guild for guild in self.bot.guilds if guild.id in worlds])
+
+    async def _clean(self, guilds):
+        """Limpia los canales del bot en esos servidores. Devuelve { nombre_del_canal: mensajes_borrados }."""
         results = {}
         for channel_names, cog_name, cache_attrs in CHANNELS_TO_CLEAN:
             cog = self.bot.get_cog(cog_name) if cog_name else None
             caches = [getattr(cog, attr, {}) for attr in cache_attrs] if cog else []
 
-            for guild in self.bot.guilds:
+            for guild in guilds:
                 channel = next(
                     (c for c in (find_channel(guild.text_channels, n) for n in channel_names) if c), None
                 )
@@ -92,7 +97,7 @@ class Cleanup(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- COMANDO MANUAL (solo administradores y desarrolladores) ---
-    @commands.hybrid_command(name="limpiar", description="Limpia ahora todos los canales del bot (solo admins, desarrolladores y programadores)")
+    @commands.hybrid_command(name="limpiar", description="Limpia ahora los canales del bot en este servidor (solo admins, desarrolladores y programadores)")
     async def clean_command(self, ctx):
         if not is_bot_admin(ctx):
             logger.warning(f"⛔ {ctx.author} intentó usar !limpiar sin permiso")
@@ -101,7 +106,7 @@ class Cleanup(commands.Cog):
 
         logger.info(f"📩 Comando !limpiar ejecutado por {ctx.author}")
         await ctx.defer(ephemeral=True)
-        results = await self.clean_channels()
+        results = await self._clean([ctx.guild])  # Solo el servidor donde se pidió
 
         lines = [
             f"#{name}: {'no se pudo limpiar (¿falta el permiso Gestionar mensajes?)' if count is None else f'{count} borrados'}"
@@ -117,4 +122,4 @@ class Cleanup(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(Cleanup(bot))
+    await bot.add_cog(Cleanup(bot, bot.data.guilds))

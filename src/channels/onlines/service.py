@@ -1,5 +1,6 @@
 """#onlines y #level-up: quién del grupo está conectado y quién cambió de nivel. No sabe nada de Discord."""
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -25,28 +26,31 @@ class CharacterCheck:
 
 
 class OnlineService:
-    def __init__(self, api, players, save, logins, parse_time, session_factory=create_session):
+    def __init__(self, api, players, logins_factory, parse_time, session_factory=create_session):
         self._api = api
         self._players = players
-        self._save = save
-        self._logins = logins          # Hora de ingreso de cada personaje conectado
-        self._parse_time = parse_time  # Convierte el last_login de la API
+        self._logins = defaultdict(logins_factory)  # { guild_id: hora de ingreso de cada personaje conectado }
+        self._parse_time = parse_time               # Convierte el last_login de la API
         self._session_factory = session_factory
 
-    def has_players(self):
-        return bool(self._players)
+    async def has_players(self, guild_id):
+        return await self._players.for_guild(guild_id).count() > 0
 
-    def player_count(self):
-        return len(self._players)
+    async def player_count(self, guild_id):
+        return await self._players.for_guild(guild_id).count()
 
-    def login_text(self, key):
-        return self._logins.text(key)
+    def login_text(self, guild_id, key):
+        return self._logins[guild_id].text(key)
 
-    async def check_online(self, world, on_level_change):
+    async def check_online(self, guild_id, world, on_level_change):
         """
         Devuelve los personajes monitoreados conectados y llama a
         on_level_change(info, old_level, new_level, vocation) por cada cambio de nivel.
         """
+        repository = self._players.for_guild(guild_id)
+        players = await repository.all()
+        logins = self._logins[guild_id]
+
         async with self._session_factory() as session:
             online_world_players = await self._api.fetch_world_online_players(session, world)
             online_lookup = {
@@ -54,7 +58,7 @@ class OnlineService:
             }
 
             online = []
-            for char_key, info in self._players.items():
+            for char_key, info in players.items():
                 char_name = info["char_name"]
                 player_data = online_lookup.get(char_name.lower())
                 if player_data is None:
@@ -66,12 +70,10 @@ class OnlineService:
 
                 if old_level is None:
                     # Inicializar si no estaba registrado
-                    info["current_level"] = lvl
-                    self._save()
+                    await repository.update(char_key, current_level=lvl)
                 elif lvl != old_level:
                     # Subió o bajó de nivel (por ejemplo, al morir)
-                    info["current_level"] = lvl
-                    self._save()
+                    await repository.update(char_key, current_level=lvl)
                     await on_level_change(info, old_level, lvl, voc)
 
                 online.append(OnlinePlayer(char_key, lvl, voc, char_name, info["owner"]))
@@ -79,14 +81,16 @@ class OnlineService:
             # Hora de ingreso (si la API falló y la lista vino vacía, no se toca el estado)
             if online_world_players:
                 online_keys = {player.key for player in online}
-                last_logins = await self._api_login_times(session, online_keys) if self._logins.needs_api_times else None
-                self._logins.update(online_keys, last_logins)
+                last_logins = await self._api_login_times(session, players, online_keys) if logins.needs_api_times else None
+                logins.update(online_keys, last_logins)
 
         return online
 
-    async def check_character(self, character_name):
+    async def check_character(self, guild_id, character_name):
         """Consulta un personaje monitoreado y guarda su nivel si cambió."""
-        info = self._players.get(character_name.strip().lower())
+        repository = self._players.for_guild(guild_id)
+        key = character_name.strip().lower()
+        info = await repository.get(key)
         if not info:
             return CharacterCheck()
 
@@ -102,17 +106,16 @@ class OnlineService:
             return CharacterCheck(info=info, char_info=char_info)
 
         # Subió o bajó y el aviso automático aún no lo había detectado
-        info["current_level"] = level
-        self._save()
-        return CharacterCheck(info=info, char_info=char_info, changed_from=old_level)
+        await repository.update(key, current_level=level)
+        return CharacterCheck(info={**info, "current_level": level}, char_info=char_info, changed_from=old_level)
 
-    async def _api_login_times(self, session, keys):
+    async def _api_login_times(self, session, players, keys):
         """{clave: hora de ingreso} según la API (solo al arrancar el bot, para quienes ya estaban online)."""
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LOOKUPS)
 
         async def lookup(key):
             async with semaphore:
-                res = await self._api.fetch_player_data(session, self._players[key]["char_name"])
+                res = await self._api.fetch_player_data(session, players[key]["char_name"])
             return key, self._parse_time((res or {}).get("character_info", {}).get("last_login"))
 
         return dict(await asyncio.gather(*(lookup(k) for k in keys)))

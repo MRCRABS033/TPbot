@@ -36,10 +36,10 @@ async def _get_previous_message(bot, channel, message_cache, guild_id, marker):
     return None
 
 
-async def send_or_update_embed(bot: discord.Client, message_cache: dict, channel_name: str, embed, view=None,
+async def send_or_update_embed(bot: discord.Client, message_cache: dict, guild, channel_name: str, embed, view=None,
                                keep_last=False):
     """
-    Busca el canal especificado en cada servidor, verifica si hay un mensaje
+    Busca el canal especificado en el servidor, verifica si hay un mensaje
     previo registrado en message_cache y lo edita; de lo contrario envía uno nuevo.
     `embed` puede ser un Embed o una lista de Embeds (máx. 10).
     `view` (opcional) agrega botones debajo del mensaje.
@@ -48,56 +48,54 @@ async def send_or_update_embed(bot: discord.Client, message_cache: dict, channel
     """
     embeds = embed if isinstance(embed, list) else [embed]
     marker = _embed_marker(embeds[0])
-    for guild in bot.guilds:
-        channel = find_channel(guild.text_channels, channel_name)
-        if not channel:
-            continue
+    channel = find_channel(guild.text_channels, channel_name)
+    if not channel:
+        return
 
-        msg = await _get_previous_message(bot, channel, message_cache, guild.id, marker)
-        if msg and keep_last and channel.last_message_id != msg.id:
-            # Ya no es el último mensaje: se borra para publicarlo de nuevo al final
-            try:
-                await msg.delete()
-            except discord.HTTPException:
-                pass
-            msg = None
-        if msg:
-            try:
-                files = thumbnail_files(embeds)
-                if files or any(a.filename.startswith(THUMBNAIL_FILE_PREFIX) for a in msg.attachments):
-                    # Las miniaturas se adjuntan de nuevo en cada edición (reemplazan a las anteriores).
-                    # Si un embed apunta a la URL ya subida en vez de attachment://, Discord muestra
-                    # los adjuntos como imágenes sueltas encima de la lista.
-                    await msg.edit(embeds=embeds, view=view, attachments=files)
-                else:
-                    await msg.edit(embeds=embeds, view=view)
-                continue
-            except discord.NotFound:
-                logger.warning(f"Mensaje previo en #{channel_name} ({guild.name}) no existe. Se enviará uno nuevo.")
-            except Exception as e:
-                logger.error(f"Error al actualizar Embed en #{channel_name}: {e}")
-
+    msg = await _get_previous_message(bot, channel, message_cache, guild.id, marker)
+    if msg and keep_last and channel.last_message_id != msg.id:
+        # Ya no es el último mensaje: se borra para publicarlo de nuevo al final
         try:
-            new_msg = await channel.send(embeds=embeds, view=view, files=thumbnail_files(embeds), silent=True)
-            message_cache[guild.id] = new_msg.id
-            logger.info(f"📢 Nuevo Embed enviado a #{channel_name} en {guild.name}")
-        except Exception as e:
-            logger.error(f"Error enviando mensaje a #{channel_name}: {e}")
-
-
-async def broadcast_embed(bot: discord.Client, channel_name: str, embed: discord.Embed, silent=False):
-    """Envía un Embed al canal especificado en cada servidor. `silent=True`: sin notificación."""
-    for guild in bot.guilds:
-        channel = find_channel(guild.text_channels, channel_name)
-        if not channel:
-            continue
+            await msg.delete()
+        except discord.HTTPException:
+            pass
+        msg = None
+    if msg:
         try:
-            await channel.send(embed=embed, silent=silent)
+            files = thumbnail_files(embeds)
+            if files or any(a.filename.startswith(THUMBNAIL_FILE_PREFIX) for a in msg.attachments):
+                # Las miniaturas se adjuntan de nuevo en cada edición (reemplazan a las anteriores).
+                # Si un embed apunta a la URL ya subida en vez de attachment://, Discord muestra
+                # los adjuntos como imágenes sueltas encima de la lista.
+                await msg.edit(embeds=embeds, view=view, attachments=files)
+            else:
+                await msg.edit(embeds=embeds, view=view)
+            return
+        except discord.NotFound:
+            logger.warning(f"Mensaje previo en #{channel_name} ({guild.name}) no existe. Se enviará uno nuevo.")
         except Exception as e:
-            logger.error(f"Error enviando mensaje a #{channel_name}: {e}")
+            logger.error(f"Error al actualizar Embed en #{channel_name}: {e}")
+
+    try:
+        new_msg = await channel.send(embeds=embeds, view=view, files=thumbnail_files(embeds), silent=True)
+        message_cache[guild.id] = new_msg.id
+        logger.info(f"📢 Nuevo Embed enviado a #{channel_name} en {guild.name}")
+    except Exception as e:
+        logger.error(f"Error enviando mensaje a #{channel_name}: {e}")
 
 
-async def repost_embed(bot: discord.Client, message_cache: dict, channel_name: str, embed, view=None):
+async def broadcast_embed(guild, channel_name: str, embed: discord.Embed, silent=False):
+    """Envía un Embed al canal especificado del servidor. `silent=True`: sin notificación."""
+    channel = find_channel(guild.text_channels, channel_name)
+    if not channel:
+        return
+    try:
+        await channel.send(embed=embed, silent=silent)
+    except Exception as e:
+        logger.error(f"Error enviando mensaje a #{channel_name}: {e}")
+
+
+async def repost_embed(bot: discord.Client, message_cache: dict, guild, channel_name: str, embed, view=None):
     """
     Borra el mensaje previo registrado en message_cache y envía el Embed de nuevo,
     para que quede al final del canal (por ejemplo, después de un aviso).
@@ -106,25 +104,24 @@ async def repost_embed(bot: discord.Client, message_cache: dict, channel_name: s
     """
     embeds = embed if isinstance(embed, list) else [embed]
     marker = _embed_marker(embeds[0])
-    for guild in bot.guilds:
-        channel = find_channel(guild.text_channels, channel_name)
-        if not channel:
-            continue
+    channel = find_channel(guild.text_channels, channel_name)
+    if not channel:
+        return
 
-        msg = await _get_previous_message(bot, channel, message_cache, guild.id, marker)
-        if msg:
-            try:
-                await msg.delete()
-            except discord.NotFound:
-                pass
-            except Exception as e:
-                logger.error(f"Error al borrar el Embed previo en #{channel_name}: {e}")
-
+    msg = await _get_previous_message(bot, channel, message_cache, guild.id, marker)
+    if msg:
         try:
-            new_msg = await channel.send(embeds=embeds, view=view, files=thumbnail_files(embeds), silent=True)
-            message_cache[guild.id] = new_msg.id
+            await msg.delete()
+        except discord.NotFound:
+            pass
         except Exception as e:
-            logger.error(f"Error enviando mensaje a #{channel_name}: {e}")
+            logger.error(f"Error al borrar el Embed previo en #{channel_name}: {e}")
+
+    try:
+        new_msg = await channel.send(embeds=embeds, view=view, files=thumbnail_files(embeds), silent=True)
+        message_cache[guild.id] = new_msg.id
+    except Exception as e:
+        logger.error(f"Error enviando mensaje a #{channel_name}: {e}")
 
 
 async def move_list_to_bottom(ctx, bot: discord.Client, message_cache: dict, channel_name: str, embed):
@@ -141,4 +138,4 @@ async def move_list_to_bottom(ctx, bot: discord.Client, message_cache: dict, cha
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-    await repost_embed(bot, message_cache, channel_name, embed)
+    await repost_embed(bot, message_cache, ctx.guild, channel_name, embed)

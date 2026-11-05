@@ -16,8 +16,6 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.patches import Circle, FancyBboxPatch
 
-from src.core.config import TEAM_NAME
-
 # --- FUENTES ---
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "assets", "fonts")
 for _file in ("Cinzel.ttf", "Lato-Regular.ttf", "Lato-Bold.ttf"):
@@ -52,16 +50,16 @@ DPI = 100
 PT = 72 / DPI          # Convierte px a puntos tipográficos
 
 
-def _draw_watermark(ax, cx, cy, scale):
+def _draw_watermark(ax, cx, cy, scale, team_name):
     """Tres círculos y el nombre del team, muy tenues, al fondo."""
     radius = 75 * scale
     for dx, dy in ((-92, -92), (92, -92), (0, 92)):
         ax.add_patch(Circle((cx + dx * scale, cy + dy * scale), radius, color=WATERMARK, zorder=0, linewidth=0))
-    ax.text(cx, cy + 250 * scale, TEAM_NAME.upper(), ha="center", va="center", color=WATERMARK,
+    ax.text(cx, cy + 250 * scale, team_name.upper(), ha="center", va="center", color=WATERMARK,
             fontfamily=TITLE_FONT, fontsize=40 * scale * PT, zorder=0)
 
 
-def build_group_progress_chart(players):
+def build_group_progress_chart(players, team_name):
     """
     Niveles ganados por cada personaje desde que ingresó al grupo, de mayor a menor.
     El primero (si ganó niveles) se destaca como MVP. Devuelve un discord.File o None si no hay grupo.
@@ -88,12 +86,12 @@ def build_group_progress_chart(players):
     rows_top, rows_bottom = HEADER, HEADER + ROW * len(rows)
     scale = min(1.0, (rows_bottom - rows_top) / 650)
     if scale >= 0.5:  # Con pocos personajes no cabe y se vería como una mancha
-        _draw_watermark(ax, BARS_LEFT + TRACK_WIDTH * 0.66, rows_top + (rows_bottom - rows_top) * 0.4, scale)
+        _draw_watermark(ax, BARS_LEFT + TRACK_WIDTH * 0.66, rows_top + (rows_bottom - rows_top) * 0.4, scale, team_name)
 
     # Cabecera
     ax.text(LEFT, 45, "NIVELES GANADOS", color=TEXT_PRIMARY, fontfamily=TITLE_FONT,
             fontsize=32 * PT, va="center", ha="left")
-    ax.text(LEFT, 86, f"Team {TEAM_NAME}  ·  desde que ingresó cada uno", color=TEXT_SECONDARY,
+    ax.text(LEFT, 86, f"Team {team_name}  ·  desde que ingresó cada uno", color=TEXT_SECONDARY,
             fontfamily=BODY_FONT, fontsize=16 * PT, va="center", ha="left")
     ax.text(LEVELS_RIGHT, 86, "ingreso → actual", color=TEXT_MUTED, fontfamily=BODY_FONT,
             fontsize=14 * PT, va="center", ha="right")

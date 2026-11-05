@@ -9,12 +9,12 @@ from discord.ext import commands, tasks
 from src.api import tibiadata
 from src.api.tibiawiki import vocation_image_url
 from src.channels.hunteds.service import ALREADY_LISTED, NOT_FOUND, DeathAlert, HuntedService
-from services.storage import save_hunteds
 from src.core.channel_names import CHANNEL_HUNTEDS
-from src.core.config import HUNTED_PLAYERS, WORLD, logger
+from src.core.config import logger
 from src.shared.death_format import format_death_time, format_killers
 from src.shared.discord_utils import broadcast_embed, send_or_update_embed
 from src.shared.embed_helpers import chunk_fields, error_embed
+from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.login_times import LoginTracker, parse_api_time
 from src.shared.online_embeds import build_grouped_online_embeds, player_url
 from src.shared.panel_ui import BUTTON_STYLE, ICON_ADD, ICON_LIST, ICON_REMOVE, ICON_SEARCH, MAX_SELECT_OPTIONS, remove_view
@@ -24,8 +24,8 @@ COLOR_HUNTED = discord.Color.dark_red()
 
 
 # --- EMBEDS DE LA LISTA ---
-async def add_hunted(service, character_name, added_by):
-    result = await service.add(character_name, added_by)
+async def add_hunted(service, guild_id, character_name, added_by):
+    result = await service.add(guild_id, character_name, added_by)
     if result.status == NOT_FOUND:
         return error_embed(f"No se encontró al personaje **{character_name}** en Tibia.com.")
     if result.status == ALREADY_LISTED:
@@ -41,18 +41,18 @@ async def add_hunted(service, character_name, added_by):
     )
     embed.set_thumbnail(url=vocation_image_url(data["vocation"]))
     embed.set_footer(text=f"Mundo: {data['world']} · Agregado por {added_by}")
-    if data["world"] != WORLD:
+    if result.world and data["world"] != result.world:
         embed.add_field(
             name="Atención",
-            value=f"Está en **{data['world']}**. Los avisos de conexión y nivel solo funcionan en **{WORLD}**; "
+            value=f"Está en **{data['world']}**. Los avisos de conexión y nivel solo funcionan en **{result.world}**; "
                   f"las muertes sí se avisan.",
             inline=False,
         )
     return embed
 
 
-def remove_hunted(service, character_name):
-    data = service.remove(character_name)
+async def remove_hunted(service, guild_id, character_name):
+    data = await service.remove(guild_id, character_name)
     if not data:
         return error_embed(f"**{character_name}** no está en la lista de hunteds.")
     logger.info(f"🗑️ Hunted eliminado: {data['char_name']}")
@@ -62,8 +62,8 @@ def remove_hunted(service, character_name):
     )
 
 
-def build_hunted_list_embed(service):
-    if not service.has_players():
+async def build_hunted_list_embed(service, guild_id):
+    if not await service.has_players(guild_id):
         return error_embed("La lista de hunteds está vacía.")
 
     def entry(data):
@@ -73,21 +73,21 @@ def build_hunted_list_embed(service):
         )
 
     embed = discord.Embed(title="Lista de hunteds", color=COLOR_HUNTED)
-    online, offline = service.split_by_connection()
+    online, offline = await service.split_by_connection(guild_id)
     if online:
         chunk_fields(embed, f"Conectados · {len(online)}", [entry(d) for d in online])
     if offline:
         chunk_fields(embed, f"Desconectados · {len(offline)}", [entry(d) for d in offline])
-    embed.set_footer(text=f"Mundo vigilado: {WORLD} · Total: {service.player_count()}")
+    embed.set_footer(text=f"Mundo vigilado: {await service.world(guild_id)} · Total: {len(online) + len(offline)}")
     return embed
 
 
-def build_hunted_embed(service, character_name):
-    key, data = service.get(character_name)
+async def build_hunted_embed(service, guild_id, character_name):
+    key, data = await service.get(guild_id, character_name)
     if not data:
         return error_embed(f"**{character_name}** no está en la lista de hunteds.")
 
-    is_online = key in service.online_keys()
+    is_online = key in service.online_keys(guild_id)
     embed = discord.Embed(
         title=data["char_name"],
         url=player_url(data["char_name"]),
@@ -113,7 +113,7 @@ class HuntedAddModal(discord.ui.Modal, title="Agregar hunted"):
     async def on_submit(self, interaction: discord.Interaction):
         logger.info(f"🎛️ Panel: {interaction.user} agrega hunted '{self.character.value}'")
         await interaction.response.defer(thinking=True)
-        await interaction.followup.send(embed=await add_hunted(self.service, self.character.value, str(interaction.user)))
+        await interaction.followup.send(embed=await add_hunted(self.service, interaction.guild_id, self.character.value, str(interaction.user)))
 
 
 class HuntedSearchModal(discord.ui.Modal, title="Buscar hunted"):
@@ -125,7 +125,7 @@ class HuntedSearchModal(discord.ui.Modal, title="Buscar hunted"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=build_hunted_embed(self.service, self.character.value), ephemeral=True
+            embed=await build_hunted_embed(self.service, interaction.guild_id, self.character.value), ephemeral=True
         )
 
 
@@ -138,7 +138,7 @@ class HuntedRemoveModal(discord.ui.Modal, title="Eliminar hunted"):
 
     async def on_submit(self, interaction: discord.Interaction):
         logger.info(f"🎛️ Panel: {interaction.user} elimina hunted '{self.character.value}'")
-        await interaction.response.send_message(embed=remove_hunted(self.service, self.character.value))
+        await interaction.response.send_message(embed=await remove_hunted(self.service, interaction.guild_id, self.character.value))
 
 
 # --- PANEL ---
@@ -159,19 +159,23 @@ class HuntedPanelView(discord.ui.View):
 
     @discord.ui.button(label=f"{ICON_LIST}  Listar", style=BUTTON_STYLE, custom_id="hunted_panel:list")
     async def list(self, interaction: discord.Interaction, button):
-        await interaction.response.send_message(embed=build_hunted_list_embed(self.service), ephemeral=True)
+        await interaction.response.send_message(
+            embed=await build_hunted_list_embed(self.service, interaction.guild_id), ephemeral=True
+        )
 
     @discord.ui.button(label=f"{ICON_REMOVE}  Eliminar", style=BUTTON_STYLE, custom_id="hunted_panel:remove")
     async def remove(self, interaction: discord.Interaction, button):
-        if not self.service.has_players():
-            await interaction.response.send_message(embed=build_hunted_list_embed(self.service), ephemeral=True)
-        elif self.service.player_count() > MAX_SELECT_OPTIONS:
+        guild_id = interaction.guild_id
+        players = await self.service.all(guild_id)
+        if not players:
+            await interaction.response.send_message(embed=await build_hunted_list_embed(self.service, guild_id), ephemeral=True)
+        elif len(players) > MAX_SELECT_OPTIONS:
             await interaction.response.send_modal(HuntedRemoveModal(self.service))
         else:
             await interaction.response.send_message(
                 view=remove_view(
-                    self.service.players,
-                    lambda name: remove_hunted(self.service, name),
+                    players,
+                    lambda name: remove_hunted(self.service, guild_id, name),
                     "Elige el hunted a eliminar",
                 ),
                 ephemeral=True,
@@ -179,9 +183,10 @@ class HuntedPanelView(discord.ui.View):
 
 
 class HuntedTracker(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
         self.list_message = {}
         # Registra la vista para que los botones ya publicados sigan funcionando tras reiniciar
         bot.add_view(HuntedPanelView(service))
@@ -196,39 +201,50 @@ class HuntedTracker(commands.Cog):
     async def hunted(self, ctx):
         """!hunted -> muestra todos los hunteds, separados en conectados y desconectados."""
         logger.info(f"📩 Comando !hunted ejecutado por {ctx.author}")
-        await ctx.send(embed=build_hunted_list_embed(self.service))
+        if not await require_world(ctx, self.guilds):
+            return
+        await ctx.send(embed=await build_hunted_list_embed(self.service, ctx.guild.id))
 
     @hunted.command(name="add", description="Agrega un personaje a la lista de hunteds")
     @app_commands.describe(character_name="Nombre del personaje en Tibia")
     async def hunted_add(self, ctx, *, character_name: str):
+        if not await require_world(ctx, self.guilds):
+            return
         await ctx.defer()
         logger.info(f"📩 Comando !hunted add ejecutado por {ctx.author} para: '{character_name}'")
-        await ctx.send(embed=await add_hunted(self.service, character_name, str(ctx.author)))
+        await ctx.send(embed=await add_hunted(self.service, ctx.guild.id, character_name, str(ctx.author)))
 
     @hunted.command(name="remove", description="Elimina un personaje de la lista de hunteds")
     @app_commands.describe(character_name="Nombre del personaje")
     async def hunted_remove(self, ctx, *, character_name: str):
         logger.info(f"📩 Comando !hunted remove ejecutado por {ctx.author} para: '{character_name}'")
-        await ctx.send(embed=remove_hunted(self.service, character_name))
+        if not await require_world(ctx, self.guilds):
+            return
+        await ctx.send(embed=await remove_hunted(self.service, ctx.guild.id, character_name))
 
     # --- TAREA AUTOMÁTICA ---
     @resilient
     @tasks.loop(seconds=60)
     async def track_hunteds(self):
-        if not self.service.has_players():
+        await for_each_configured_guild(self.bot, self.guilds, self._check_guild)
+
+    async def _check_guild(self, guild, world):
+        total = await self.service.player_count(guild.id)
+        view = HuntedPanelView(self.service)
+        if not total:
             # Sin hunteds se publica igual la lista vacía, para que estén los botones de agregar
             await send_or_update_embed(
-                self.bot, self.list_message, CHANNEL_HUNTEDS, self._build_list_embeds([]), view=HuntedPanelView(self.service)
+                self.bot, self.list_message, guild, CHANNEL_HUNTEDS, self._build_list_embeds([], world, total), view=view
             )
             return
-        logger.info(f"🎯 Verificando hunteds en {WORLD}...")
+        logger.info(f"🎯 Verificando hunteds en {world}...")
 
-        result = await self.service.check(WORLD)
+        result = await self.service.check(guild.id, world)
 
         alerts = [
             self._build_death_embed(alert.data, alert.death, alert.char_info)
             if isinstance(alert, DeathAlert)
-            else self._build_level_embed(alert.data, alert.old_level, alert.new_level, alert.vocation)
+            else self._build_level_embed(alert.data, alert.old_level, alert.new_level, alert.vocation, world)
             for alert in result.alerts
         ]
         online_list = [
@@ -236,27 +252,28 @@ class HuntedTracker(commands.Cog):
                 player.level,
                 player.vocation,
                 f"**[{player.name}]({player_url(player.name)})**\n"
-                f"  Nivel {player.level} · {player.vocation} · {self.service.login_text(player.key)}",
+                f"  Nivel {player.level} · {player.vocation} · {self.service.login_text(guild.id, player.key)}",
             )
             for player in result.online
         ]
-        list_embeds = self._build_list_embeds(online_list)
+        list_embeds = self._build_list_embeds(online_list, world, await self.service.player_count(guild.id))
 
         # Los avisos de nivel y muerte van como mensajes aparte; la lista siempre se edita en el mismo mensaje
         for alert in alerts:
-            await broadcast_embed(self.bot, CHANNEL_HUNTEDS, alert)
-        await send_or_update_embed(self.bot, self.list_message, CHANNEL_HUNTEDS, list_embeds, view=HuntedPanelView(self.service))
+            await broadcast_embed(guild, CHANNEL_HUNTEDS, alert)
+        await send_or_update_embed(self.bot, self.list_message, guild, CHANNEL_HUNTEDS, list_embeds, view=view)
 
-    def _build_list_embeds(self, online_list):
+    @staticmethod
+    def _build_list_embeds(online_list, world, total):
         """Lista de hunteds online, con los botones del panel debajo (agregar, buscar, listar, eliminar)."""
         return build_grouped_online_embeds(
             online_list,
             title="Hunteds online",
-            footer=f"Mundo: {WORLD} · Conectados: {len(online_list)} de {self.service.player_count()}",
+            footer=f"Mundo: {world} · Conectados: {len(online_list)} de {total}",
             color=discord.Color.dark_red(),
             empty_text=(
                 "Ningún hunted está conectado."
-                if self.service.has_players()
+                if total
                 else "La lista está vacía. Usa ＋ Agregar para añadir un hunted."
             ),
         )
@@ -267,7 +284,7 @@ class HuntedTracker(commands.Cog):
 
     # --- AVISOS ---
     @staticmethod
-    def _build_level_embed(data, old_level, new_level, vocation):
+    def _build_level_embed(data, old_level, new_level, vocation, world):
         logger.info(f"🎯 Hunted {data['char_name']}: nivel {old_level} -> {new_level}")
         up = new_level > old_level
         embed = discord.Embed(
@@ -279,7 +296,7 @@ class HuntedTracker(commands.Cog):
         embed.add_field(name="Vocación", value=vocation, inline=True)
         embed.add_field(name="Nivel", value=f"{old_level} → **{new_level}**", inline=True)
         embed.set_thumbnail(url=vocation_image_url(vocation))
-        embed.set_footer(text=f"Mundo: {WORLD}")
+        embed.set_footer(text=f"Mundo: {world}")
         return embed
 
     @staticmethod
@@ -304,5 +321,5 @@ class HuntedTracker(commands.Cog):
 
 
 async def setup(bot):
-    service = HuntedService(tibiadata, HUNTED_PLAYERS, save_hunteds, LoginTracker(), parse_api_time)
-    await bot.add_cog(HuntedTracker(bot, service))
+    service = HuntedService(tibiadata, bot.data.hunteds, bot.data.guilds, LoginTracker, parse_api_time)
+    await bot.add_cog(HuntedTracker(bot, service, bot.data.guilds))

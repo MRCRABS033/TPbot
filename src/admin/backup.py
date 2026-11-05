@@ -1,31 +1,35 @@
 """
 Respaldo manual de los datos del bot (personajes del grupo y hunteds), sin tocar el hosting.
 
-- !respaldo   envía los JSON como archivos adjuntos (guárdalos antes de cada despliegue).
-- !restaurar  carga esos archivos (adjúntalos al mensaje). Antes guarda una copia .bak de lo actual.
+Cada comando trabaja solo con los datos del servidor donde se usa.
+
+- !respaldo   envía los datos como archivos JSON adjuntos.
+- !restaurar  carga esos archivos (adjúntalos al mensaje) y envía una copia de lo que había antes.
 Solo administradores, desarrolladores y programadores.
 """
 import io
 import json
-import os
-import shutil
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from src.core.config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
+from src.core.config import logger
 from src.core.constants.roles import NO_PERMISSION_MESSAGE
 from src.shared.permissions import is_bot_admin
-from services.storage import DATA_FILE, HUNTED_FILE, save_data, save_hunteds
 
 MAX_BACKUP_SIZE = 5 * 1024 * 1024  # 5 MB
 
-# tipo -> (nombre del archivo, datos en memoria, función que los guarda, descripción)
+# tipo -> (nombre del archivo, descripción)
 DATASETS = {
-    "group": (DATA_FILE, WATCHED_PLAYERS, save_data, "personajes del grupo"),
-    "hunteds": (HUNTED_FILE, HUNTED_PLAYERS, save_hunteds, "hunteds"),
+    "group": ("watched_players.json", "personajes del grupo"),
+    "hunteds": ("hunteds.json", "hunteds"),
 }
+
+
+def json_file(data, filename):
+    content = json.dumps(data, indent=4, ensure_ascii=False).encode("utf-8")
+    return discord.File(io.BytesIO(content), filename=filename)
 
 
 def detect_dataset(data):
@@ -45,8 +49,12 @@ def detect_dataset(data):
 
 
 class Backup(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, players, hunteds):
         self.bot = bot
+        self.repositories = {"group": players, "hunteds": hunteds}
+
+    def _characters(self, kind, guild_id):
+        return self.repositories[kind].for_guild(guild_id)
 
     @commands.hybrid_command(name="respaldo", description="Envía una copia de los datos del bot (solo administración)")
     async def backup_command(self, ctx):
@@ -56,11 +64,10 @@ class Backup(commands.Cog):
         logger.info(f"📩 Comando !respaldo ejecutado por {ctx.author}")
 
         files, lines = [], []
-        for filename, data, _, label in DATASETS.values():
-            content = json.dumps(data, indent=4, ensure_ascii=False).encode("utf-8")
-            name = os.path.basename(filename)
-            files.append(discord.File(io.BytesIO(content), filename=name))
-            lines.append(f"• **{name}**: {len(data)} {label}")
+        for kind, (filename, label) in DATASETS.items():
+            data = await self._characters(kind, ctx.guild.id).all()
+            files.append(json_file(data, filename))
+            lines.append(f"• **{filename}**: {len(data)} {label}")
 
         embed = discord.Embed(
             title="Respaldo de datos",
@@ -85,7 +92,7 @@ class Backup(commands.Cog):
             await ctx.send("⚠️ Adjunta los archivos del respaldo (.json) al mensaje de **!restaurar**.", ephemeral=True)
             return
 
-        results = []
+        results, previous = [], []
         for attachment in attachments:
             if attachment.size > MAX_BACKUP_SIZE:
                 results.append(f"⚠️ **{attachment.filename}**: es demasiado grande.")
@@ -101,21 +108,20 @@ class Backup(commands.Cog):
                 results.append(f"⚠️ **{attachment.filename}**: no parece un respaldo del bot (grupo o hunteds).")
                 continue
 
-            filename, target, save, label = DATASETS[kind]
+            filename, label = DATASETS[kind]
+            characters = self._characters(kind, ctx.guild.id)
             # Copia de lo que había antes, por si hay que deshacer la restauración
-            if os.path.exists(filename):
-                shutil.copyfile(filename, filename + ".bak")
-            target.clear()
-            target.update(data)
-            save()
+            previous.append(json_file(await characters.all(), f"anterior_{filename}"))
+            await characters.replace_all(data)
             results.append(f"✅ **{attachment.filename}**: {len(data)} {label} restaurados.")
             logger.info(f"♻️ {ctx.author} restauró {len(data)} {label} desde {attachment.filename}")
 
         embed = discord.Embed(title="Restauración de datos", description="\n".join(results),
                               color=discord.Color.dark_teal())
-        embed.set_footer(text="Lo anterior quedó guardado como .bak en el servidor")
-        await ctx.send(embed=embed, ephemeral=True)
+        if previous:
+            embed.set_footer(text="Lo que había antes va adjunto: guárdalo por si hay que deshacer la restauración")
+        await ctx.send(embed=embed, files=previous, ephemeral=True)
 
 
 async def setup(bot):
-    await bot.add_cog(Backup(bot))
+    await bot.add_cog(Backup(bot, bot.data.players, bot.data.hunteds))

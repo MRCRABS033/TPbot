@@ -89,13 +89,12 @@ class BossService:
         return None
 
     # --- PERSONAJES DEL GRUPO ---
-    def has_players(self):
-        return bool(self._players)
-
-    def sorted_players(self):
+    async def sorted_players(self, guild_id):
         """[(clave, datos)] ordenados por dueño y personaje."""
-        return sorted(self._players.items(), key=lambda kv: (kv[1]["owner"].lower(), kv[1]["char_name"].lower()))
+        players = await self._players.for_guild(guild_id).all()
+        return sorted(players.items(), key=lambda kv: (kv[1]["owner"].lower(), kv[1]["char_name"].lower()))
 
-    def participants(self, keys):
+    async def participants(self, guild_id, keys):
         """Datos de los personajes elegidos que siguen en el grupo."""
-        return [self._players[k] for k in keys if k in self._players]
+        players = await self._players.for_guild(guild_id).all()
+        return [players[k] for k in keys if k in players]

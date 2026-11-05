@@ -32,8 +32,8 @@ COMMAND_SECTIONS = {
     ],
     "Administración": [
         ("!config [mundo]", "Sin mundo muestra el mundo de Tibia del servidor. Con mundo lo cambia (solo administración)."),
-        ("!limpiar", "Limpia ahora todos los canales del bot (menos #cementerio). Solo administradores, desarrolladores y programadores."),
-        ("!respaldo", "Envía una copia de los datos (grupo y hunteds). Úsalo antes de cada despliegue."),
+        ("!limpiar", "Limpia ahora los canales del bot en este servidor (menos #cementerio). Solo administradores, desarrolladores y programadores."),
+        ("!respaldo", "Envía una copia de los datos de este servidor (grupo y hunteds)."),
         ("!restaurar", "Carga un respaldo: adjunta los archivos .json al mensaje."),
     ],
     "Hunteds": [

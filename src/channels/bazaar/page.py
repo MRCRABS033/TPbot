@@ -101,8 +101,9 @@ class Bazaar(commands.Cog):
     async def keep_panel(self):
         if not self.service.worlds:
             await self.service.load_worlds()
-        await send_or_update_embed(self.bot, self.panel_message, CHANNEL_BAZAAR, build_panel_embed(),
-                                   view=BazaarPanelView(self), keep_last=True)
+        for guild in self.bot.guilds:
+            await send_or_update_embed(self.bot, self.panel_message, guild, CHANNEL_BAZAAR, build_panel_embed(),
+                                       view=BazaarPanelView(self), keep_last=True)
 
     @keep_panel.before_loop
     async def before_keep_panel(self):

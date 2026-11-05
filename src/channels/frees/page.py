@@ -2,7 +2,8 @@ import discord
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_FREES, find_channel
-from src.core.config import WORLD, logger
+from src.core.config import logger
+from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.task_utils import resilient
 from src.shared.discord_utils import move_list_to_bottom, send_or_update_embed
 from src.shared.online_embeds import build_grouped_online_embeds, player_url
@@ -17,11 +18,12 @@ class FreeTracker(commands.Cog):
     Se edita cada minuto (sin un mensaje por cada conexión).
     """
 
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
         self.free_embed_message = {}
-        self.last_list_embed = None   # Última lista generada (la usa !free)
+        self.last_list_embeds = {}    # { guild_id: última lista generada } (la usa !free)
         self.update_free_players.start()
 
     def cog_unload(self):
@@ -30,12 +32,16 @@ class FreeTracker(commands.Cog):
     @resilient
     @tasks.loop(seconds=60)
     async def update_free_players(self):
-        logger.info(f"Consultando Free Accounts online en {WORLD}...")
-        free_players = await self.service.get_free_players(WORLD)
+        await for_each_configured_guild(self.bot, self.guilds, self._update_guild)
 
-        self.last_list_embed = self._build_list_embeds(free_players, WORLD)
+    async def _update_guild(self, guild, world):
+        logger.info(f"Consultando Free Accounts online en {world}...")
+        free_players = await self.service.get_free_players(world)
+
+        embeds = self._build_list_embeds(free_players, world)
+        self.last_list_embeds[guild.id] = embeds
         # Siempre se edita el mismo mensaje (entre o salga alguien)
-        await send_or_update_embed(self.bot, self.free_embed_message, CHANNEL_FREES, self.last_list_embed)
+        await send_or_update_embed(self.bot, self.free_embed_message, guild, CHANNEL_FREES, embeds)
 
     @staticmethod
     def _build_list_embeds(free_players, world):
@@ -58,13 +64,17 @@ class FreeTracker(commands.Cog):
     @commands.hybrid_command(name="free", description="Muestra la lista de jugadores free online")
     async def free_command(self, ctx):
         """Muestra la lista de frees donde se pide. En #frees, la mueve al final del canal."""
+        world = await require_world(ctx, self.guilds)
+        if not world:
+            return
         in_frees = find_channel([ctx.channel], CHANNEL_FREES) is not None
         await ctx.defer(ephemeral=in_frees)
-        await self.update_free_players()
+        await self._update_guild(ctx.guild, world)
+        embeds = self.last_list_embeds[ctx.guild.id]
         if in_frees:
-            await move_list_to_bottom(ctx, self.bot, self.free_embed_message, CHANNEL_FREES, self.last_list_embed)
+            await move_list_to_bottom(ctx, self.bot, self.free_embed_message, CHANNEL_FREES, embeds)
         else:
-            await ctx.send(embeds=self.last_list_embed, files=thumbnail_files(self.last_list_embed))
+            await ctx.send(embeds=embeds, files=thumbnail_files(embeds))
 
     @update_free_players.before_loop
     async def before_update(self):
@@ -72,4 +82,4 @@ class FreeTracker(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(FreeTracker(bot, FreeService(tibiadata)))
+    await bot.add_cog(FreeTracker(bot, FreeService(tibiadata), bot.data.guilds))

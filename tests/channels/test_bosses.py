@@ -10,6 +10,7 @@ from PIL import Image
 
 from src.channels.bosses.service import LOCAL_TZ, BossService, parse_activity_time
 from src.shared.pixel_art import IMAGE_SCALE, upscale_image
+from tests.fakes import GUILD_ID, FakeCharacterRepository
 
 BOSS = {"name": "Dragon Lord", "image_url": "http://api/boss.gif"}
 NOW = LOCAL_TZ.localize(datetime(2026, 11, 4, 15, 0))
@@ -57,7 +58,8 @@ def make_service(boss=BOSS, wiki=None, info=None, players=None):
     api = SimpleNamespace(fetch_boosted_boss=AsyncMock(return_value=boss))
     fetch_info = AsyncMock(return_value=info if info is not None else {"hp": "28000"})
     players = players if players is not None else {"ana": player("Ana")}
-    return BossService(api, wiki or FakeWiki(), fetch_info, players, session_factory=FakeSession)
+    repository = FakeCharacterRepository(players, {2: {"zoe": player("Zoe")}})
+    return BossService(api, wiki or FakeWiki(), fetch_info, repository, session_factory=FakeSession)
 
 
 class ActivityTimeTests(unittest.TestCase):
@@ -136,11 +138,16 @@ class RefreshTests(unittest.IsolatedAsyncioTestCase):
         await service.ensure_info()
         self.assertEqual(service._fetch_info.await_count, 2)
 
-    def test_participantes_y_orden(self):
+    async def test_participantes_y_orden(self):
         players = {"b": player("Beto", "luis"), "a": player("Ana", "Vale"), "c": player("Caro", "Luis")}
         service = make_service(players=players)
-        self.assertEqual([k for k, _ in service.sorted_players()], ["b", "c", "a"])
-        self.assertEqual([d["char_name"] for d in service.participants(["a", "ya_no_esta"])], ["Ana"])
+        self.assertEqual([k for k, _ in await service.sorted_players(GUILD_ID)], ["b", "c", "a"])
+        self.assertEqual([d["char_name"] for d in await service.participants(GUILD_ID, ["a", "ya_no_esta"])], ["Ana"])
+
+    async def test_los_participantes_son_solo_de_ese_servidor(self):
+        service = make_service()
+        self.assertEqual([k for k, _ in await service.sorted_players(2)], ["zoe"])
+        self.assertEqual(await service.participants(GUILD_ID, ["zoe"]), [])
 
 
 class PageTests(unittest.IsolatedAsyncioTestCase):
@@ -151,6 +158,7 @@ class PageTests(unittest.IsolatedAsyncioTestCase):
 
     def interaction(self):
         return MagicMock(
+            guild_id=GUILD_ID,
             response=MagicMock(defer=AsyncMock(), send_message=AsyncMock(), send_modal=AsyncMock()),
             followup=MagicMock(send=AsyncMock()),
         )
@@ -229,7 +237,7 @@ class PageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_actividad_sin_canal_avisa(self):
         service = await self.ready_service()
-        view = self.page.GroupActivityView(service, BOSS, self.interaction())
+        view = self.page.GroupActivityView(service, BOSS, self.interaction(), await service.sorted_players(GUILD_ID))
         modal = self.page.ActivityModal(view)
         modal.time._value, modal.note._value = "9pm", ""
         submit = self.interaction()

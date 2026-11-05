@@ -14,11 +14,11 @@ from src.api import tibiadata
 from src.api.tibiawiki import vocation_image_url
 from src.channels.tpbot.chart import build_group_progress_chart
 from src.channels.tpbot.service import GroupService
-from services.storage import save_data
 from src.core.channel_names import CHANNEL_TPBOT, find_channel
-from src.core.config import PLAYERS_STATE, WATCHED_PLAYERS, logger
+from src.core.config import logger
 from src.shared.discord_utils import send_or_update_embed
 from src.shared.embed_helpers import chunk_fields, error_embed
+from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.online_embeds import player_url
 from src.shared.panel_ui import BUTTON_STYLE, ICON_ADD, ICON_LIST, ICON_REMOVE, ICON_SEARCH, MAX_SELECT_OPTIONS, remove_view
 from src.shared.task_utils import resilient
@@ -31,8 +31,8 @@ def _niveles(n):
 
 
 # --- EMBEDS ---
-async def add_group_member(service, owner, character_name):
-    added = await service.add(owner, character_name)
+async def add_group_member(service, guild_id, owner, character_name):
+    added = await service.add(guild_id, owner, character_name)
     if not added:
         return error_embed(f"No se encontró al personaje **{character_name}** en Tibia.com.")
 
@@ -51,8 +51,8 @@ async def add_group_member(service, owner, character_name):
     return embed
 
 
-def remove_group_member(service, character_name):
-    data = service.remove(character_name)
+async def remove_group_member(service, guild_id, character_name):
+    data = await service.remove(guild_id, character_name)
     if not data:
         return error_embed(f"El personaje **{character_name}** no está en el grupo.")
     logger.info(f"🗑️ Personaje '{data['char_name']}' eliminado del grupo")
@@ -63,9 +63,10 @@ def remove_group_member(service, character_name):
     )
 
 
-def build_group_list_embed(service):
+async def build_group_list_embed(service, guild_id):
     """Lista del grupo agrupada por dueño, con el nivel actual y el de ingreso de cada personaje."""
-    if not service.has_players():
+    grouped = await service.by_owner(guild_id)
+    if not grouped:
         return discord.Embed(
             title="Personajes del grupo",
             description="La lista está vacía. Usa ＋ Agregar para añadir un personaje.",
@@ -73,7 +74,6 @@ def build_group_list_embed(service):
         )
 
     embed = discord.Embed(title="Personajes del grupo", color=COLOR_GROUP)
-    grouped = service.by_owner()
     for owner in sorted(grouped, key=str.lower):
         if len(embed.fields) >= 24:  # Límite de Discord: 25 campos por embed
             embed.add_field(name="…", value=f"y {len(grouped) - 24} dueños más", inline=False)
@@ -84,15 +84,17 @@ def build_group_list_embed(service):
             for data in grouped[owner]
         ])
 
-    embed.set_footer(text=f"Total: {service.player_count()} personajes · {len(grouped)} dueños")
+    total = sum(len(characters) for characters in grouped.values())
+    embed.set_footer(text=f"Total: {total} personajes · {len(grouped)} dueños")
     return embed
 
 
-def build_group_progress(service):
+async def build_group_progress(service, guild):
     """Progreso del grupo como gráfica: (embed, archivo PNG). Si el grupo está vacío, (embed, None)."""
-    chart = build_group_progress_chart(service.players)
+    players = await service.all(guild.id)
+    chart = build_group_progress_chart(players, await service.team_name(guild.id, guild.name))
     if not chart:
-        return build_group_list_embed(service), None
+        return await build_group_list_embed(service, guild.id), None
 
     embed = discord.Embed(
         title="Progreso del grupo",
@@ -100,11 +102,12 @@ def build_group_progress(service):
         color=COLOR_GROUP,
     )
     embed.set_image(url=f"attachment://{chart.filename}")
-    embed.set_footer(text=f"Total: {service.player_count()} personajes · {service.owner_count()} dueños")
+    owners = {d["owner"] for d in players.values()}
+    embed.set_footer(text=f"Total: {len(players)} personajes · {len(owners)} dueños")
     return embed, chart
 
 
-def build_group_panel_embed(service):
+async def build_group_panel_embed(service, guild_id):
     """Tarjeta fija del panel del grupo en #tpbot (la información se ve al pulsar los botones)."""
     embed = discord.Embed(
         title="Panel del grupo",
@@ -114,12 +117,12 @@ def build_group_panel_embed(service):
         ),
         color=COLOR_GROUP,
     )
-    embed.set_footer(text=f"{service.player_count()} personajes · {service.owner_count()} dueños")
+    embed.set_footer(text=f"{await service.player_count(guild_id)} personajes · {await service.owner_count(guild_id)} dueños")
     return embed
 
 
-def build_group_member_embed(service, character_name):
-    data = service.get(character_name)
+async def build_group_member_embed(service, guild_id, character_name):
+    data = await service.get(guild_id, character_name)
     if not data:
         return error_embed(f"El personaje **{character_name}** no está en el grupo.")
 
@@ -158,7 +161,7 @@ class GroupAddModal(discord.ui.Modal, title="Agregar personaje al grupo"):
         logger.info(f"🎛️ Panel: {interaction.user} agrega '{self.character.value}' al grupo")
         await interaction.response.defer(thinking=True)
         await interaction.followup.send(
-            embed=await add_group_member(self.service, self.owner.value, self.character.value)
+            embed=await add_group_member(self.service, interaction.guild_id, self.owner.value, self.character.value)
         )
 
 
@@ -171,7 +174,7 @@ class GroupSearchModal(discord.ui.Modal, title="Buscar personaje del grupo"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=build_group_member_embed(self.service, self.character.value), ephemeral=True
+            embed=await build_group_member_embed(self.service, interaction.guild_id, self.character.value), ephemeral=True
         )
 
 
@@ -184,7 +187,7 @@ class GroupRemoveModal(discord.ui.Modal, title="Eliminar personaje del grupo"):
 
     async def on_submit(self, interaction: discord.Interaction):
         logger.info(f"🎛️ Panel: {interaction.user} elimina '{self.character.value}' del grupo")
-        await interaction.response.send_message(embed=remove_group_member(self.service, self.character.value))
+        await interaction.response.send_message(embed=await remove_group_member(self.service, interaction.guild_id, self.character.value))
 
 
 # --- PANEL ---
@@ -206,7 +209,7 @@ class GroupPanelView(discord.ui.View):
     @discord.ui.button(label=f"{ICON_LIST}  Listar", style=BUTTON_STYLE, custom_id="group_panel:list")
     async def list(self, interaction: discord.Interaction, button):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        embed, chart = build_group_progress(self.service)
+        embed, chart = await build_group_progress(self.service, interaction.guild)
         if chart:
             await interaction.followup.send(embed=embed, file=chart, ephemeral=True)
         else:
@@ -214,15 +217,17 @@ class GroupPanelView(discord.ui.View):
 
     @discord.ui.button(label=f"{ICON_REMOVE}  Eliminar", style=BUTTON_STYLE, custom_id="group_panel:remove")
     async def remove(self, interaction: discord.Interaction, button):
-        if not self.service.has_players():
-            await interaction.response.send_message(embed=build_group_list_embed(self.service), ephemeral=True)
-        elif self.service.player_count() > MAX_SELECT_OPTIONS:
+        guild_id = interaction.guild_id
+        players = await self.service.all(guild_id)
+        if not players:
+            await interaction.response.send_message(embed=await build_group_list_embed(self.service, guild_id), ephemeral=True)
+        elif len(players) > MAX_SELECT_OPTIONS:
             await interaction.response.send_modal(GroupRemoveModal(self.service))
         else:
             await interaction.response.send_message(
                 view=remove_view(
-                    self.service.players,
-                    lambda name: remove_group_member(self.service, name),
+                    players,
+                    lambda name: remove_group_member(self.service, guild_id, name),
                     "Elige el personaje a eliminar",
                 ),
                 ephemeral=True,
@@ -230,9 +235,10 @@ class GroupPanelView(discord.ui.View):
 
 
 class Panel(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
         self.group_list_message = {}
         # Registra la vista para que los botones ya publicados sigan funcionando tras reiniciar
         bot.add_view(GroupPanelView(service))
@@ -245,11 +251,15 @@ class Panel(commands.Cog):
     @resilient
     @tasks.loop(seconds=60)
     async def update_group_list(self):
+        await for_each_configured_guild(self.bot, self.guilds, self._update_guild)
+
+    async def _update_guild(self, guild, world):
         await send_or_update_embed(
             self.bot,
             self.group_list_message,
+            guild,
             CHANNEL_TPBOT,
-            build_group_panel_embed(self.service),
+            await build_group_panel_embed(self.service, guild.id),
             view=GroupPanelView(self.service),
             keep_last=True,
         )
@@ -261,7 +271,10 @@ class Panel(commands.Cog):
     @commands.hybrid_command(name="panel", description="Vuelve a poner el panel del grupo al final de #tpbot")
     async def panel(self, ctx):
         logger.info(f"📩 Comando !panel ejecutado por {ctx.author}")
-        await self.update_group_list()
+        world = await require_world(ctx, self.guilds)
+        if not world:
+            return
+        await self._update_guild(ctx.guild, world)
         channel = find_channel(ctx.guild.text_channels, CHANNEL_TPBOT)
         if channel:
             await ctx.send(f"✅ Panel del grupo actualizado en {channel.mention}.")
@@ -271,39 +284,48 @@ class Panel(commands.Cog):
 
 # --- COMANDOS ---
 class AddCommand(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
 
     @commands.hybrid_command(name="add", description="Agrega un personaje a la lista de monitoreo")
     @app_commands.describe(owner="Dueño del personaje", character_name="Nombre del personaje en Tibia")
     async def add_player(self, ctx, owner: str, *, character_name: str):
+        if not await require_world(ctx, self.guilds):
+            return
         await ctx.defer()
         logger.info(f"📩 Comando !add ejecutado por {ctx.author} para: '{character_name}' (Dueño: {owner})")
-        await ctx.send(embed=await add_group_member(self.service, owner, character_name))
+        await ctx.send(embed=await add_group_member(self.service, ctx.guild.id, owner, character_name))
 
 
 class RemoveCommand(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
 
     @commands.hybrid_command(name="remove", description="Elimina un personaje de la lista de monitoreo")
     @app_commands.describe(character_name="Nombre del personaje")
     async def remove_player(self, ctx, *, character_name: str):
         logger.info(f"📩 Comando !remove ejecutado por {ctx.author} para: '{character_name}'")
-        await ctx.send(embed=remove_group_member(self.service, character_name))
+        if not await require_world(ctx, self.guilds):
+            return
+        await ctx.send(embed=await remove_group_member(self.service, ctx.guild.id, character_name))
 
 
 class ListCommands(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
 
     @commands.hybrid_command(name="list", description="Muestra todos los personajes monitoreados")
     async def list_players(self, ctx):
         logger.info(f"📩 Comando !list ejecutado por {ctx.author}")
-        embed, chart = build_group_progress(self.service)
+        if not await require_world(ctx, self.guilds):
+            return
+        embed, chart = await build_group_progress(self.service, ctx.guild)
         if chart:
             await ctx.send(embed=embed, file=chart)
         else:
@@ -311,21 +333,25 @@ class ListCommands(commands.Cog):
 
 
 class WhoisCommands(commands.Cog):
-    def __init__(self, bot, service):
+    def __init__(self, bot, service, guilds):
         self.bot = bot
         self.service = service
+        self.guilds = guilds
 
     @commands.hybrid_command(name="whois", description="Muestra el dueño y el progreso de un personaje")
     @app_commands.describe(character_name="Nombre del personaje")
     async def whois_char(self, ctx, *, character_name: str):
         logger.info(f"📩 Comando !whois ejecutado por {ctx.author} para el personaje: '{character_name}'")
-        await ctx.send(embed=build_group_member_embed(self.service, character_name))
+        if not await require_world(ctx, self.guilds):
+            return
+        await ctx.send(embed=await build_group_member_embed(self.service, ctx.guild.id, character_name))
 
 
 async def setup(bot):
-    service = GroupService(tibiadata, WATCHED_PLAYERS, PLAYERS_STATE, save_data)
-    await bot.add_cog(Panel(bot, service))
-    await bot.add_cog(AddCommand(bot, service))
-    await bot.add_cog(RemoveCommand(bot, service))
-    await bot.add_cog(ListCommands(bot, service))
-    await bot.add_cog(WhoisCommands(bot, service))
+    guilds = bot.data.guilds
+    service = GroupService(tibiadata, bot.data.players, guilds)
+    await bot.add_cog(Panel(bot, service, guilds))
+    await bot.add_cog(AddCommand(bot, service, guilds))
+    await bot.add_cog(RemoveCommand(bot, service, guilds))
+    await bot.add_cog(ListCommands(bot, service, guilds))
+    await bot.add_cog(WhoisCommands(bot, service, guilds))

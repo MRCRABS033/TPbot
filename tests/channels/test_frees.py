@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.channels.frees.service import ACCOUNT_STATUS_TTL, FreeService
+from tests.fakes import GUILD_ID, FakeGuildRepository
 
 
 class FakeSession:
@@ -82,6 +83,20 @@ class FreeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(api.player_queries, ["Ana", "Ana"])
 
 
+class WorldTests(unittest.IsolatedAsyncioTestCase):
+    async def test_consultar_otro_mundo_no_borra_el_cache_del_primero(self):
+        api = FakeApi({"Ana": "Free Account"})
+        service = make_service(api)
+        await service.get_free_players("Quidera")
+        online = api.online
+        api.online = [{"name": "Zoe"}]
+        api.accounts["Zoe"] = "Premium Account"
+        await service.get_free_players("Antica")
+        api.online = online
+        await service.get_free_players("Quidera")
+        self.assertEqual(api.player_queries, ["Ana", "Zoe"])
+
+
 class FreeTrackerPageTests(unittest.IsolatedAsyncioTestCase):
     async def test_el_loop_publica_en_frees_lo_que_devuelve_el_service(self):
         os.environ.setdefault("DISCORD_TOKEN", "test")  # config.py lo exige al importarse
@@ -90,13 +105,18 @@ class FreeTrackerPageTests(unittest.IsolatedAsyncioTestCase):
         service = make_service(FakeApi({"Ana": "Free Account", "Beto": "Premium Account"}))
         # Sin __init__: así no arranca la tarea automática real
         cog = page.FreeTracker.__new__(page.FreeTracker)
-        cog.bot, cog.service, cog.free_embed_message, cog.last_list_embed = MagicMock(), service, {}, None
+        guild = MagicMock(id=GUILD_ID)
+        cog.bot, cog.service, cog.free_embed_message, cog.last_list_embeds = MagicMock(guilds=[guild, MagicMock(id=99)]), service, {}, {}
+        cog.guilds = FakeGuildRepository()  # El servidor 99 no está configurado
 
         with patch.object(page, "send_or_update_embed", new=AsyncMock()) as send:
             await page.FreeTracker.update_free_players.coro(cog)
 
-        self.assertEqual(send.await_args.args[2], page.CHANNEL_FREES)
-        text = str([embed.to_dict() for embed in cog.last_list_embed])
+        send.assert_awaited_once()
+        self.assertIs(send.await_args.args[2], guild)
+        self.assertEqual(send.await_args.args[3], page.CHANNEL_FREES)
+        self.assertEqual(service._api.world, "Quidera")
+        text = str([embed.to_dict() for embed in cog.last_list_embeds[GUILD_ID]])
         self.assertIn("Ana", text)
         self.assertNotIn("Beto", text)
 

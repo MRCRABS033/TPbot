@@ -1,5 +1,6 @@
 """#hunteds: administra la lista y detecta conexiones, niveles y muertes. No sabe nada de Discord."""
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -42,62 +43,68 @@ class AddResult:
     status: str
     name: str = None
     data: dict = None
+    world: str = None  # Mundo que sigue el servidor
 
 
 class HuntedService:
-    def __init__(self, api, players, save, logins, parse_time, session_factory=create_session):
+    def __init__(self, api, players, guilds, logins_factory, parse_time, session_factory=create_session):
         self._api = api
         self._players = players
-        self._save = save
-        self._logins = logins          # Hora de ingreso de cada hunted conectado
-        self._parse_time = parse_time  # Convierte el last_login de la API
+        self._guilds = guilds
+        self._logins = defaultdict(logins_factory)  # { guild_id: hora de ingreso de cada hunted conectado }
+        self._parse_time = parse_time               # Convierte el last_login de la API
         self._session_factory = session_factory
 
+    async def world(self, guild_id):
+        """Mundo que sigue el servidor."""
+        return await self._guilds.world(guild_id)
+
     # --- LISTA ---
-    @property
-    def players(self):
-        return self._players
+    async def all(self, guild_id):
+        return await self._players.for_guild(guild_id).all()
 
-    def has_players(self):
-        return bool(self._players)
+    async def has_players(self, guild_id):
+        return await self.player_count(guild_id) > 0
 
-    def player_count(self):
-        return len(self._players)
+    async def player_count(self, guild_id):
+        return await self._players.for_guild(guild_id).count()
 
-    def get(self, character_name):
+    async def get(self, guild_id, character_name):
         """(clave, datos) del hunted; los datos son None si no está en la lista."""
         key = character_name.strip().lower()
-        return key, self._players.get(key)
+        return key, await self._players.for_guild(guild_id).get(key)
 
-    def online_keys(self):
+    def online_keys(self, guild_id):
         """Hunteds conectados ahora."""
-        return set(self._logins.since)
+        return set(self._logins[guild_id].since)
 
-    def login_text(self, key):
-        return self._logins.text(key)
+    def login_text(self, guild_id, key):
+        return self._logins[guild_id].text(key)
 
-    def split_by_connection(self):
+    async def split_by_connection(self, guild_id):
         """(conectados, desconectados), de mayor a menor nivel."""
-        online_keys = self.online_keys()
-        hunteds = sorted(self._players.items(), key=lambda kv: kv[1].get("level", 0), reverse=True)
+        online_keys = self.online_keys(guild_id)
+        players = await self.all(guild_id)
+        hunteds = sorted(players.items(), key=lambda kv: kv[1].get("level", 0), reverse=True)
         online = [data for key, data in hunteds if key in online_keys]
         offline = [data for key, data in hunteds if key not in online_keys]
         return online, offline
 
-    async def add(self, character_name, added_by):
+    async def add(self, guild_id, character_name, added_by):
         async with self._session_factory() as session:
             res = await self._api.fetch_player_data(session, character_name.strip())
         char_info = (res or {}).get("character_info")
         if not char_info:
             return AddResult(NOT_FOUND)
 
+        repository = self._players.for_guild(guild_id)
         name = res["official_name"]
         key = name.lower()
-        if key in self._players:
+        if await repository.get(key):
             return AddResult(ALREADY_LISTED, name=name)
 
         deaths = res.get("deaths", [])
-        self._players[key] = {
+        data = {
             "char_name": name,
             "tibia_link": res["tibia_link"],
             "world": char_info.get("world", "N/A"),
@@ -107,70 +114,66 @@ class HuntedService:
             # Última muerte conocida: solo se avisarán las muertes posteriores
             "last_death_time": deaths[0]["time"] if deaths else None,
         }
-        self._save()
-        return AddResult(ADDED, name=name, data=self._players[key])
+        await repository.put(key, data)
+        return AddResult(ADDED, name=name, data=data, world=await self.world(guild_id))
 
-    def remove(self, character_name):
+    async def remove(self, guild_id, character_name):
         """Devuelve los datos del hunted eliminado, o None si no estaba en la lista."""
-        data = self._players.pop(character_name.strip().lower(), None)
-        if data:
-            self._save()
-        return data
+        return await self._players.for_guild(guild_id).remove(character_name.strip().lower())
 
     # --- REVISIÓN AUTOMÁTICA ---
-    async def check(self, world):
+    async def check(self, guild_id, world):
+        repository = self._players.for_guild(guild_id)
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LOOKUPS)
 
         async def lookup(name):
             async with semaphore:
                 return await self._api.fetch_player_data(session, name)
 
-        entries = list(self._players.items())
+        entries = list((await repository.all()).items())
         async with self._session_factory() as session:
             online_world = await self._api.fetch_world_online_players(session, world)
             # Se consulta a cada hunted para detectar muertes (aunque esté desconectado)
             details = await asyncio.gather(*(lookup(d["char_name"]) for _, d in entries))
 
         online_lookup = {p.get("name", "").lower(): p for p in online_world}
+        current = await repository.all()  # Pudieron eliminar a alguien mientras se revisaba
         alerts = []
         online = []
         last_logins = {}
-        changed = False
 
         for (key, data), res in zip(entries, details):
-            if key not in self._players:
-                continue  # Lo eliminaron mientras se revisaba
+            if key not in current:
+                continue
+
+            changes = {}
 
             # --- MUERTES ---
             deaths = (res or {}).get("deaths", [])
             if res and deaths and deaths[0].get("time") != data.get("last_death_time"):
-                data["last_death_time"] = deaths[0]["time"]
-                changed = True
-                # Copia: el aviso muestra los datos de este momento, antes de actualizar nivel y vocación
-                alerts.append(DeathAlert(dict(data), deaths[0], res.get("character_info", {})))
+                changes["last_death_time"] = deaths[0]["time"]
+                alerts.append(DeathAlert(data, deaths[0], res.get("character_info", {})))
 
             player = online_lookup.get(key)
-            if not player:
-                continue
+            if player:
+                # --- CONECTADO (sin aviso: aparece en la lista con su hora de ingreso) ---
+                lvl = player.get("level", 0)
+                voc = player.get("vocation", data.get("vocation", "N/A"))
+                last_logins[key] = self._parse_time((res or {}).get("character_info", {}).get("last_login"))
 
-            # --- CONECTADO (sin aviso: aparece en la lista con su hora de ingreso) ---
-            lvl = player.get("level", 0)
-            voc = player.get("vocation", data.get("vocation", "N/A"))
-            last_logins[key] = self._parse_time((res or {}).get("character_info", {}).get("last_login"))
+                # --- NIVEL ---
+                old_level = data.get("level")
+                if old_level and lvl != old_level:
+                    alerts.append(LevelAlert(data, old_level, lvl, voc))
+                if lvl != old_level or voc != data.get("vocation"):
+                    changes.update(level=lvl, vocation=voc)
 
-            # --- NIVEL ---
-            old_level = data.get("level")
-            if old_level and lvl != old_level:
-                alerts.append(LevelAlert(dict(data), old_level, lvl, voc))
-            if lvl != old_level or voc != data.get("vocation"):
-                data["level"], data["vocation"] = lvl, voc
-                changed = True
+                online.append(OnlineHunted(key, lvl, voc, data["char_name"]))
 
-            online.append(OnlineHunted(key, lvl, voc, data["char_name"]))
+            if changes:
+                await repository.update(key, **changes)
 
-        if changed:
-            self._save()
         # Si la API del mundo falló (lista vacía), no se actualiza el estado de conexión
         if online_world:
-            self._logins.update({player.key for player in online}, last_logins)
+            self._logins[guild_id].update({player.key for player in online}, last_logins)
         return HuntedCheck(alerts, online)
