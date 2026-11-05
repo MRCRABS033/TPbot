@@ -13,8 +13,9 @@ fetch_boss_info(session, nombre) devuelve un dict con:
 import re
 
 from config import logger
-from constants.tibia import DAMAGE_MODS, ELEMENTS, NO_RARITY, RARITIES, TIBIAWIKI_API
-from services.tibia_wiki import WIKI_HEADERS, wiki_file_names_for
+from constants.tibia import DAMAGE_MODS, ELEMENTS, NO_RARITY, RARITIES
+from src.api.fandom import fetch_wikitext
+from src.api.tibiawiki import wiki_file_names_for
 from services.wikitext import clean_wikitext, find_template, parse_fields, parse_template, split_params
 
 _cache = {}  # { nombre: dict | None }
@@ -178,16 +179,11 @@ async def fetch_boss_info(session, boss_name):
         return _cache[boss_name]
 
     for page in dict.fromkeys(n[:-4] for n in wiki_file_names_for(boss_name)):
-        params = {"action": "parse", "page": page, "prop": "wikitext", "format": "json", "redirects": 1}
         try:
-            async with session.get(TIBIAWIKI_API, params=params, headers=WIKI_HEADERS) as response:
-                if response.status != 200:
-                    continue
-                data = await response.json(content_type=None)
+            wikitext = await fetch_wikitext(session, page)
         except Exception as e:
             logger.warning(f"⚠️ Error al consultar TibiaWiki para {boss_name}: {e}")
             return None  # No se cachea: se reintenta la próxima vez
-        wikitext = data.get("parse", {}).get("wikitext", {}).get("*")
         info = parse_infobox(wikitext) if wikitext else None
         if info is not None:
             _cache[boss_name] = info

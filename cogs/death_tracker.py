@@ -2,15 +2,15 @@ import asyncio
 import io
 import re
 from datetime import datetime, timedelta, timezone
-import aiohttp
 import discord
 from discord.ext import commands, tasks
 
 from channels import CHANNEL_DEATHS, find_channel
 from config import PLAYERS_STATE, WATCHED_PLAYERS, logger
 from services.task_utils import resilient
-from services.tibia_api import fetch_player_data
-from services.tibia_wiki import creature_file_name, fetch_wiki_image, vocation_file_name
+from src.api.http import create_session
+from src.api.tibiadata import fetch_player_data
+from src.api.tibiawiki import creature_file_name, fetch_wiki_image, vocation_file_name
 
 # Imagen del asesino (monstruo u outfit por vocación) en la esquina del aviso de muerte
 SHOW_DEATH_THUMBNAIL = True
@@ -43,7 +43,7 @@ class DeathTracker(commands.Cog):
 
         current_entries = list(WATCHED_PLAYERS.items())
 
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             for char_key, info in current_entries:
                 char_name = info["char_name"]
                 owner_name = info["owner"]
@@ -89,7 +89,7 @@ class DeathTracker(commands.Cog):
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LOOKUPS)
         players = list(WATCHED_PLAYERS.values())
 
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             async def lookup(name):
                 async with semaphore:
                     return await fetch_player_data(session, name)
@@ -215,7 +215,7 @@ class DeathTracker(commands.Cog):
         if not names:
             return {}
 
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             results = await asyncio.gather(*(fetch_player_data(session, name) for name in names))
         return {
             name: res["character_info"]
@@ -228,7 +228,7 @@ class DeathTracker(commands.Cog):
         if not killer:
             return None
 
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             if killer.get("player"):
                 vocation = player_infos.get(killer["name"], {}).get("vocation", "")
                 return await fetch_wiki_image(session, vocation_file_name(vocation))

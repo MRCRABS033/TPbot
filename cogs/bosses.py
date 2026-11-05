@@ -9,9 +9,9 @@ Boss boosted del día (TibiaData /v4/boostablebosses).
 """
 import io
 import re
+from contextlib import aclosing
 from datetime import datetime, timedelta
 
-import aiohttp
 import discord
 from discord.ext import commands, tasks
 import pytz
@@ -22,9 +22,10 @@ from config import WATCHED_PLAYERS, logger
 from services.discord_utils import _get_previous_message
 from services.online_embeds import player_url
 from services.task_utils import resilient
-from services.tibia_api import fetch_boosted_boss
+from src.api.http import create_session
+from src.api.tibiadata import fetch_boosted_boss
 from services.boss_info import fetch_boss_info
-from services.tibia_wiki import wiki_file_names_for
+from src.api.tibiawiki import iter_boss_images
 
 # La hora que se escribe al crear la actividad se interpreta en hora de México (Ciudad de México).
 # Discord no informa la zona horaria de cada usuario; en el anuncio cada quien la ve en su hora local.
@@ -39,9 +40,6 @@ BOSSES_URL = "https://www.tibia.com/library/?subtopic=boostablebosses"
 
 
 # --- IMAGEN ---
-# Fuente principal: TibiaWiki BR (imágenes animadas). static.tibia.com bloquea muchas descargas
-# automáticas (depende del servidor donde corra el bot), así que queda como respaldo.
-WIKI_FILE_URL = "https://www.tibiawiki.com.br/wiki/Special:FilePath/{}"
 def _upscale(data):
     """Agranda la imagen sin suavizar (pixel art nítido). Mantiene la animación si la tiene."""
     image = Image.open(io.BytesIO(data))
@@ -62,23 +60,15 @@ def _upscale(data):
 
 async def download_boss_image(boss):
     """
-    Descarga la imagen del boss (TibiaWiki BR y, si falla, static.tibia.com) y la agranda.
+    Descarga la imagen del boss (ver iter_boss_images) y la agranda.
     Devuelve (bytes, nombre_de_archivo) o None.
     """
-    urls = [WIKI_FILE_URL.format(name) for name in wiki_file_names_for(boss["name"])]
-    if boss.get("image_url"):
-        urls.append(boss["image_url"])
-
-    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (TPbot)"}) as session:
-        for url in urls:
+    async with aclosing(iter_boss_images(boss["name"], boss.get("image_url"))) as images:
+        async for data in images:
             try:
-                async with session.get(url) as response:
-                    if response.status != 200 or not response.content_type.startswith("image/"):
-                        continue
-                    data = await response.read()
                 return _upscale(data)
             except Exception as e:
-                logger.warning(f"⚠️ No se pudo usar la imagen {url}: {e}")
+                logger.warning(f"⚠️ No se pudo usar una imagen de {boss['name']}: {e}")
     logger.warning(f"⚠️ No se pudo descargar la imagen de {boss['name']}; Discord la cargará desde la API")
     return None
 
@@ -396,7 +386,7 @@ class BossCardView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         if cog.boss_info is None:
-            async with aiohttp.ClientSession() as session:
+            async with create_session() as session:
                 cog.boss_info = await fetch_boss_info(session, cog.current_boss["name"])
         image_url, file = boss_media(cog)
         await interaction.followup.send(
@@ -424,7 +414,7 @@ class BossTracker(commands.Cog):
 
     async def _refresh_boss(self):
         """Consulta el boss del día. Devuelve True si cambió (o si se consiguió la imagen que faltaba)."""
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             boss = await fetch_boosted_boss(session)
         if not boss:
             return False
@@ -436,7 +426,7 @@ class BossTracker(commands.Cog):
             return False
         self.current_boss = boss
         self.image = await download_boss_image(boss)
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             self.boss_info = await fetch_boss_info(session, boss["name"])
         logger.info(f"👑 Boss boosted de hoy: {boss['name']}")
         return True

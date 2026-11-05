@@ -12,9 +12,6 @@ import io
 import time
 
 import discord
-import tibiapy
-import tibiapy.errors
-from aiohttp_socks import ProxyConnectionError, ProxyConnector, ProxyError, ProxyTimeoutError
 from discord import app_commands
 from discord.ext import commands, tasks
 from PIL import Image
@@ -37,15 +34,14 @@ from services.bazaar import (
     BazaarFilters,
     BazaarSearch,
     TooManyResults,
-    create_session,
     download_outfits,
     enum_text,
-    fetch_auction_details,
     format_tc,
 )
 from services.bazaar_image import render_catalog
 from services.discord_utils import send_or_update_embed
 from services.task_utils import resilient
+from src.api import tibiacom
 
 COLOR = discord.Color.from_rgb(139, 92, 246)
 PANEL_TITLE = "Bazar de personajes"
@@ -169,7 +165,7 @@ async def send_details(send, search, code_text, ephemeral):
                    ephemeral=ephemeral)
         return
 
-    details = await fetch_auction_details(auction.auction_id)
+    details = await tibiacom.fetch_auction_details(auction.auction_id)
     outfits = await download_outfits([auction.outfit.image_url])
     outfit = outfits.get(auction.outfit.image_url)
     kwargs = {"embed": build_details_embed(code, auction, details, outfit is not None), "ephemeral": ephemeral}
@@ -186,17 +182,18 @@ def describe_error(error):
     """Explicación corta del fallo al consultar tibia.com (se muestra a quien buscó)."""
     if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
         return "tibia.com tardó demasiado en responder. Intenta de nuevo en un momento."
-    if isinstance(error, tibiapy.errors.ForbiddenError):
+    kind = tibiacom.classify_error(error)
+    if kind == tibiacom.ERROR_FORBIDDEN:
         if BAZAAR_PROXY_URL:
             return ("tibia.com bloqueó la conexión (error 403) **aunque se usó el proxy**. "
                     "Puede ser una IP del proxy bloqueada: intenta de nuevo; si sigue, revisa el proxy.")
         return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403) y **no hay "
                 "proxy configurado**: el bot no encontró la variable BAZAAR_PROXY_URL.")
-    if isinstance(error, (ProxyError, ProxyConnectionError, ProxyTimeoutError)):
+    if kind == tibiacom.ERROR_PROXY:
         return "no se pudo conectar con el proxy configurado (BAZAAR_PROXY_URL). Revisa que esté activo."
-    if isinstance(error, tibiapy.errors.SiteMaintenanceError):
+    if kind == tibiacom.ERROR_MAINTENANCE:
         return "tibia.com está en mantenimiento. Intenta más tarde."
-    if isinstance(error, tibiapy.errors.NetworkError):
+    if kind == tibiacom.ERROR_NETWORK:
         return f"error de conexión con tibia.com ({error}). Intenta de nuevo en un momento."
     return f"error inesperado ({type(error).__name__}). Intenta de nuevo en un momento."
 
@@ -574,9 +571,8 @@ class Bazaar(commands.Cog):
         bot.add_view(BazaarPanelView())
 
     async def cog_load(self):
-        # Con sesión propia: tiempo límite por petición y, si está configurado, el proxy
-        self.client = tibiapy.Client(session=create_session())
-        if isinstance(self.client.session.connector, ProxyConnector):
+        self.client = tibiacom.create_client()
+        if tibiacom.uses_proxy(self.client):
             logger.info("🛒 Bazaar: las consultas a tibia.com saldrán por el proxy configurado")
         else:
             logger.info("Bazaar: sin proxy; las consultas a tibia.com salen directo desde este servidor")
@@ -585,7 +581,7 @@ class Bazaar(commands.Cog):
     async def cog_unload(self):
         self.keep_panel.cancel()
         if self.client:
-            await self.client.session.close()
+            await tibiacom.close_client(self.client)
 
     async def render_page(self, search, page, mode=CARDS):
         """(embed, archivo o None) de una página del catálogo, o (None, None) si no hay resultados."""
@@ -664,9 +660,7 @@ class Bazaar(commands.Cog):
 
     async def _load_worlds(self):
         try:
-            response = await self.client.fetch_current_auctions(1)
-            filters = response.data.filters
-            self.worlds = set(filters.available_worlds or []) if filters else set()
+            self.worlds = await tibiacom.fetch_available_worlds(self.client)
         except Exception as e:
             logger.warning(f"⚠️ No se pudo cargar la lista de mundos del bazaar: {e}")
 

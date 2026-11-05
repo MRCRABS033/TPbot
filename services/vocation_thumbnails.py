@@ -9,11 +9,11 @@ de TibiaWiki como antes.
 import io
 import logging
 
-import aiohttp
 import discord
 from PIL import Image, ImageSequence
 
-from services.tibia_wiki import VOCATION_OUTFITS, fetch_wiki_image, vocation_image_url
+from src.api.http import create_session
+from src.api.tibiawiki import VOCATION_OUTFITS, fetch_wiki_image, vocation_image_url
 
 THUMBNAIL_MAX_SIZE = 80  # Discord muestra las miniaturas a 80x80 como máximo
 ATTACHMENT_PREFIX = "attachment://"
@@ -60,7 +60,7 @@ def _enlarge(gif_bytes):
 
 async def load_vocation_thumbnails():
     """Descarga y prepara los outfits (una vez, al arrancar). Los que fallen usan la URL de TibiaWiki."""
-    async with aiohttp.ClientSession() as session:
+    async with create_session() as session:
         for key, file_name in VOCATION_OUTFITS.items():
             if key in _thumbnails:
                 continue

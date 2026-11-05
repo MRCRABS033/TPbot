@@ -1,6 +1,5 @@
 import asyncio
 import time
-import aiohttp
 import discord
 from discord.ext import commands, tasks
 
@@ -10,7 +9,8 @@ from services.task_utils import resilient
 from services.discord_utils import move_list_to_bottom, send_or_update_embed
 from services.online_embeds import build_grouped_online_embeds, player_url
 from services.vocation_thumbnails import thumbnail_files
-from services.tibia_api import fetch_player_data, fetch_world_online_players
+from src.api.http import create_session
+from src.api.tibiadata import fetch_player_data, fetch_world_online_players
 
 # Cuánto tiempo se recuerda si una cuenta es free (evita consultar a todos los jugadores cada minuto)
 ACCOUNT_STATUS_TTL = 60 * 60  # 1 hora
@@ -54,7 +54,7 @@ class FreeTracker(commands.Cog):
         logger.info(f"🔄 Consultando Free Accounts online en {world}...")
         semaphore = asyncio.Semaphore(8)
 
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             online_players = await fetch_world_online_players(session, world)
             statuses = await asyncio.gather(
                 *(self._is_free(session, semaphore, p.get("name")) for p in online_players)

@@ -18,7 +18,7 @@ CHANNEL_ONLINES = "onlines"
 CHANNEL_LEVEL = "level-up"
 CHANNEL_LEVEL_ALT = "levels"  # Alternativo si no existe CHANNEL_LEVEL
 
-# Anuncio semanal del empleado del mes (watched_players, weekly_tracker)
+# Anuncio semanal del empleado del mes (watched_players)
 CHANNEL_EMPLEADO = "empleado-del-mes"
 CHANNEL_EMPLEADO_ALT = "empleado"  # Alternativo si no existe CHANNEL_EMPLEADO
 

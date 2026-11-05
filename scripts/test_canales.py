@@ -18,15 +18,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import aiohttp
 import discord
 
 from channels import CHANNEL_DEATHS, find_channel
 from cogs.death_tracker import DeathTracker
 from config import TOKEN, WATCHED_PLAYERS, logger
 from services.storage import load_data
-from services.tibia_api import fetch_player_data, fetch_world_online_players
-from services.tibia_wiki import VOCATION_OUTFITS
+from src.api.http import create_session
+from src.api.tibiadata import fetch_player_data, fetch_world_online_players
+from src.api.tibiawiki import VOCATION_OUTFITS
 
 WORLD = "Quidera"
 MODE = sys.argv[1].lower() if len(sys.argv) > 1 else "basico"
@@ -68,7 +68,7 @@ async def test_basico(tracker, victim, char_info, deaths):
 
 
 async def test_vocaciones(tracker, victim, char_info):
-    async with aiohttp.ClientSession() as session:
+    async with create_session() as session:
         online = await fetch_world_online_players(session, WORLD)
 
     # Un jugador online por cada vocación base (+ "sin vocación")
@@ -117,7 +117,7 @@ async def on_ready():
     tracker = DeathTracker.__new__(DeathTracker)
     tracker.bot = client
 
-    async with aiohttp.ClientSession() as session:
+    async with create_session() as session:
         res = await fetch_player_data(session, victim["char_name"])
     char_info = (res or {}).get("character_info", {"world": WORLD})
     deaths = (res or {}).get("deaths", [])

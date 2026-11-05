@@ -1,6 +1,6 @@
 import discord
 
-from services.tibia_wiki import VOCATION_OUTFITS, vocation_key
+from src.api.tibiawiki import VOCATION_OUTFITS, vocation_key
 from services.vocation_thumbnails import vocation_thumbnail
 
 VOCATION_GROUP_NAMES = {

@@ -3,15 +3,15 @@ Lógica compartida para gestionar los personajes del grupo y los hunteds.
 La usan tanto los comandos (!add, !hunted add, ...) como los botones del panel (!panel).
 Cada función devuelve un Embed listo para enviar.
 """
-import aiohttp
 import discord
 
 from config import HUNTED_PLAYERS, PLAYERS_STATE, WATCHED_PLAYERS, WORLD, logger
 from services.charts import build_group_progress_chart
 from services.online_embeds import player_url
 from services.storage import save_data, save_hunteds
-from services.tibia_api import fetch_player_data
-from services.tibia_wiki import vocation_image_url
+from src.api.http import create_session
+from src.api.tibiadata import fetch_player_data
+from src.api.tibiawiki import vocation_image_url
 
 COLOR_GROUP = discord.Color.dark_teal()
 COLOR_HUNTED = discord.Color.dark_red()
@@ -40,7 +40,7 @@ def _chunk_fields(embed, title, entries, separator="\n\n"):
 # --- PERSONAJES DEL GRUPO ---
 async def add_group_member(owner: str, character_name: str):
     owner = owner.strip()
-    async with aiohttp.ClientSession() as session:
+    async with create_session() as session:
         res = await fetch_player_data(session, character_name.strip())
     if not res or not res.get("character_info"):
         return _error(f"No se encontró al personaje **{character_name}** en Tibia.com.")
@@ -182,7 +182,7 @@ def build_group_member_embed(character_name: str):
 
 # --- HUNTEDS ---
 async def add_hunted(character_name: str, added_by: str):
-    async with aiohttp.ClientSession() as session:
+    async with create_session() as session:
         res = await fetch_player_data(session, character_name.strip())
     char_info = (res or {}).get("character_info")
     if not char_info:

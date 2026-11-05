@@ -4,7 +4,6 @@ Traducciones al español de los términos que vienen en inglés desde TibiaWiki.
 """
 
 # --- FUENTES DE DATOS ---
-TIBIAWIKI_API = "https://tibia.fandom.com/api.php"
 # Mapa interactivo: {x},{y},{z} en coordenadas absolutas del juego
 TIBIAMAPS_URL = "https://tibiamaps.io/map#{x},{y},{z}:2"
 

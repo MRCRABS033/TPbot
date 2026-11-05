@@ -1,63 +1,28 @@
 """
 Búsqueda en el Char Bazaar de tibia.com.
 
-- El listado se obtiene con tibia.py (fetch_current_auctions + AuctionFilters).
+- Las consultas a tibia.com están en src/api/tibiacom.py.
 - El precio no es un filtro de tibia.com: se filtra en el bot sobre los resultados.
-- La ficha detallada se lee directamente de la página de la subasta, porque el lector de
-  detalles de tibia.py no funciona con el diseño actual de tibia.com.
 """
 import asyncio
 import io
-import logging
 import math
-import re
 import time
 from dataclasses import dataclass, replace
 
-import aiohttp
-from aiohttp_socks import ProxyConnector
-from bs4 import BeautifulSoup
 from PIL import Image
-from tibiapy import enums
-from tibiapy.models import AuctionFilters
 
-from config import BAZAAR_PROXY_URL, logger
+from config import logger
 from constants.bazaar import (
-    AUCTION_URL,
     CARDS_PER_IMAGE,
-    DETAILS_CACHE_SECONDS,
     MAX_PAGES_FOR_PRICE_FILTER,
     PARALLEL_REQUESTS,
-    REQUEST_TIMEOUT,
     TIBIA_PAGE_SIZE,
     ORDER_OPTIONS,
     PVP_OPTIONS,
     VOCATION_OPTIONS,
 )
-
-HEADERS = {"User-Agent": "Mozilla/5.0 (TPbot)"}
-
-
-def create_session():
-    """
-    Sesión HTTP para todo lo del bazaar (listado, fichas e imágenes): con tiempo límite y, si está
-    configurado BAZAAR_PROXY_URL, saliendo por el proxy (tibia.com bloquea muchas IPs de hosting).
-    """
-    connector = None
-    if BAZAAR_PROXY_URL:
-        try:
-            connector = ProxyConnector.from_url(BAZAAR_PROXY_URL)
-        except ValueError as e:
-            logger.error(f"❌ BAZAAR_PROXY_URL no es una dirección válida ({e}). Formato esperado: "
-                         f"http://usuario:clave@host:puerto (sin comillas). El bazaar seguirá SIN proxy.")
-    return aiohttp.ClientSession(headers=HEADERS, connector=connector,
-                                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT))
-# Skills que se muestran en la ficha (la página también trae bonus de tareas que no interesan)
-MAIN_SKILLS = ("Magic Level", "Fist Fighting", "Club Fighting", "Sword Fighting", "Axe Fighting",
-               "Distance Fighting", "Shielding", "Fishing")
-
-# tibia.py registra cada petición; solo interesan sus avisos y errores
-logging.getLogger("tibiapy").setLevel(logging.WARNING)
+from src.api import tibiacom
 
 
 def enum_text(value):
@@ -104,16 +69,16 @@ class BazaarFilters:
     def with_changes(self, **changes):
         return replace(self, **changes)
 
-    def to_tibiapy(self):
+    def to_api(self):
         order_by, direction = dict(ORDER_OPTIONS)[self.order]
-        return AuctionFilters(
-            vocation=enums.AuctionVocationFilter[self.vocation] if self.vocation else None,
-            pvp_type=enums.PvpTypeFilter[self.pvp_type] if self.pvp_type else None,
+        return tibiacom.build_auction_filters(
+            vocation=self.vocation,
+            pvp_type=self.pvp_type,
             world=self.world,
             min_level=self.min_level,
             max_level=self.max_level,
-            order_by=enums.AuctionOrderBy[order_by],
-            order=enums.AuctionOrderDirection[direction],
+            order_by=order_by,
+            direction=direction,
         )
 
     def matches_price(self, bid):
@@ -183,8 +148,7 @@ class BazaarSearch:
 
     async def _tibia_page(self, number):
         if number not in self._tibia_pages:
-            response = await self.client.fetch_current_auctions(number, self.filters.to_tibiapy())
-            bazaar = response.data
+            bazaar = await tibiacom.fetch_auctions_page(self.client, number, self.filters.to_api())
             self._tibia_pages[number] = list(bazaar.entries)
             self.tibia_results = bazaar.results_count
             self.total_tibia_pages = bazaar.total_pages or 0
@@ -252,49 +216,6 @@ class BazaarSearch:
         return await self.get(code - 1)
 
 
-# --- FICHA DETALLADA ---
-_details_cache = {}  # { auction_id: (hora, datos) }
-
-
-async def fetch_auction_details(auction_id):
-    """
-    Datos de la página de la subasta: {"general": {etiqueta: valor}, "skills": [(skill, nivel)]}.
-    None si no se pudo leer.
-    """
-    cached = _details_cache.get(auction_id)
-    if cached and time.monotonic() - cached[0] < DETAILS_CACHE_SECONDS:
-        return cached[1]
-
-    try:
-        async with create_session() as session:
-            async with session.get(AUCTION_URL.format(auction_id=auction_id)) as response:
-                if response.status != 200:
-                    logger.warning(f"⚠️ HTTP {response.status} al leer la subasta {auction_id}")
-                    return None
-                html = await response.text()
-    except Exception as e:
-        logger.error(f"❌ Error al leer la subasta {auction_id}: {e}")
-        return None
-
-    soup = BeautifulSoup(html, "lxml")
-    general, skills = {}, []
-    for table in soup.select("table.TableContent"):
-        for row in table.find_all("tr"):
-            cells = [c.get_text(" ", strip=True) for c in row.find_all("td")]
-            if len(cells) == 3 and cells[0] in MAIN_SKILLS and re.fullmatch(r"\d+", cells[1]):
-                skills.append((cells[0], int(cells[1])))  # Fila de skills: nombre | nivel | %
-                continue
-            for cell in cells:
-                label, sep, value = cell.partition(":")
-                # Solo pares "Etiqueta: valor" cortos (la cabecera de la página es un bloque largo)
-                if sep and value.strip() and len(label) < 40 and len(value) < 80:
-                    general.setdefault(label.strip(), value.replace("\xa0", " ").strip())
-
-    data = {"general": general, "skills": skills} if general else None
-    _details_cache[auction_id] = (time.monotonic(), data)
-    return data
-
-
 # --- IMÁGENES DE LOS OUTFITS ---
 _outfit_cache = {}  # { url: Image RGBA | None }
 
@@ -303,22 +224,11 @@ async def download_outfits(urls):
     """{url: Image RGBA} de los outfits (los que no se puedan descargar quedan fuera)."""
     pending = [u for u in dict.fromkeys(urls) if u and u not in _outfit_cache]
     if pending:
-        async with create_session() as session:
-            async def fetch(url):
-                # Dos intentos: con un proxy que cambia de IP, alguna petición suelta puede fallar
-                for attempt in range(2):
-                    try:
-                        async with session.get(url) as response:
-                            if response.status == 200 and response.content_type.startswith("image/"):
-                                image = Image.open(io.BytesIO(await response.read()))
-                                image.seek(0)  # Primer fotograma si es animado
-                                return url, image.convert("RGBA")
-                    except Exception as e:
-                        if attempt:
-                            logger.warning(f"⚠️ No se pudo descargar el outfit {url}: {e}")
-                return url, None
-
-            for url, image in await asyncio.gather(*(fetch(u) for u in pending)):
-                if image is not None:
-                    _outfit_cache[url] = image
+        for url, data in (await tibiacom.fetch_images(pending)).items():
+            try:
+                image = Image.open(io.BytesIO(data))
+                image.seek(0)  # Primer fotograma si es animado
+                _outfit_cache[url] = image.convert("RGBA")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo leer el outfit {url}: {e}")
     return {u: _outfit_cache[u] for u in urls if u in _outfit_cache}

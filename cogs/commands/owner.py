@@ -1,10 +1,9 @@
-import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from config import WATCHED_PLAYERS, PLAYERS_STATE, logger
-from services.tibia_api import fetch_player_data, fetch_world_online_players
+from src.api.tibiadata import fetch_player_data, fetch_world_online_players
 from services.storage import save_data
 
 class OwnerCommands(commands.Cog):

@@ -1,5 +1,7 @@
 import logging
 
+from src.api.http import create_session
+
 logger = logging.getLogger("TibiaBot")
 
 # TibiaWiki BR: redirige directo a la imagen. (La wiki de fandom bloquea las descargas de bots)
@@ -76,3 +78,25 @@ def wiki_file_names_for(boss_name):
     hyphen_lower = [w[:1] + w[1:].lower() for w in small_lower]
     names = ["_".join(words), "_".join(small_lower), "_".join(hyphen_lower)]
     return [f"{n}.gif" for n in dict.fromkeys(names)]
+
+
+async def iter_boss_images(boss_name, fallback_url=None):
+    """
+    Bytes de cada imagen disponible del boss, en orden de preferencia: TibiaWiki BR (animadas) y
+    `fallback_url` (static.tibia.com bloquea muchas descargas automáticas, así que queda de respaldo).
+    """
+    urls = [WIKI_FILE_URL.format(name) for name in wiki_file_names_for(boss_name)]
+    if fallback_url:
+        urls.append(fallback_url)
+
+    async with create_session(headers=WIKI_HEADERS) as session:
+        for url in urls:
+            try:
+                async with session.get(url) as response:
+                    if response.status != 200 or not response.content_type.startswith("image/"):
+                        continue
+                    data = await response.read()
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo usar la imagen {url}: {e}")
+                continue
+            yield data

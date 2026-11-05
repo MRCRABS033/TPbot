@@ -1,5 +1,4 @@
 import asyncio
-import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -14,8 +13,9 @@ from services.login_times import LoginTracker, parse_api_time
 from services.online_embeds import build_grouped_online_embeds, player_url
 from services.roster import add_hunted, build_hunted_list_embed, remove_hunted
 from services.storage import save_hunteds
-from services.tibia_api import fetch_player_data, fetch_world_online_players
-from services.tibia_wiki import vocation_image_url
+from src.api.http import create_session
+from src.api.tibiadata import fetch_player_data, fetch_world_online_players
+from src.api.tibiawiki import vocation_image_url
 
 # Consultas simultáneas a la API al revisar muertes de hunteds
 MAX_CONCURRENT_LOOKUPS = 5
@@ -76,7 +76,7 @@ class HuntedTracker(commands.Cog):
                 return await fetch_player_data(session, name)
 
         entries = list(HUNTED_PLAYERS.items())
-        async with aiohttp.ClientSession() as session:
+        async with create_session() as session:
             online_world = await fetch_world_online_players(session, WORLD)
             # Se consulta a cada hunted para detectar muertes (aunque esté desconectado)
             details = await asyncio.gather(*(lookup(d["char_name"]) for _, d in entries))
