@@ -92,3 +92,17 @@ async def fetch_boosted_creature(session):
     except Exception as e:
         logger.error(f"❌ Error al consultar la criatura boosted: {e}")
     return None
+
+
+async def fetch_worlds(session):
+    """Nombres de todos los mundos de Tibia según TibiaData v4. Lista vacía si falla."""
+    url = "https://api.tibiadata.com/v4/worlds"
+    try:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                return [world["name"] for world in data.get("worlds", {}).get("regular_worlds", []) if world.get("name")]
+            logger.warning(f"⚠️ HTTP {response.status} al consultar los mundos de Tibia")
+    except Exception as e:
+        logger.error(f"❌ Error al consultar los mundos de Tibia: {e}")
+    return []

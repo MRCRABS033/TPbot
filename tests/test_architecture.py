@@ -39,7 +39,7 @@ class ArchitectureTests(unittest.TestCase):
                 self.assertFalse(module.startswith("src.core.config"), f"{path} importa {module}")
 
     def test_la_base_no_depende_de_canales(self):
-        for folder in ("core", "shared", "api"):
+        for folder in ("core", "shared", "api", "data"):
             for path in (ROOT / "src" / folder).rglob("*.py"):
                 for module in imported_modules(path):
                     self.assertFalse(module.startswith("src.channels"), f"{path} importa {module}")
@@ -54,7 +54,10 @@ class BotLoadTests(unittest.IsolatedAsyncioTestCase):
         import main
         from src.admin.cleanup import CHANNELS_TO_CLEAN
 
+        from tests.fakes import FakeDatabase
+
         bot = commands.Bot(command_prefix="!", intents=main.intents, help_command=None)
+        bot.data = FakeDatabase()
         async with bot:
             for extension in main.INITIAL_EXTENSIONS:
                 await bot.load_extension(extension)

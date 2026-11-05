@@ -31,6 +31,7 @@ COMMAND_SECTIONS = {
         ("!ver <código>", "Muestra la ficha completa de un personaje de la última búsqueda del canal."),
     ],
     "Administración": [
+        ("!config [mundo]", "Sin mundo muestra el mundo de Tibia del servidor. Con mundo lo cambia (solo administración)."),
         ("!limpiar", "Limpia ahora todos los canales del bot (menos #cementerio). Solo administradores, desarrolladores y programadores."),
         ("!respaldo", "Envía una copia de los datos (grupo y hunteds). Úsalo antes de cada despliegue."),
         ("!restaurar", "Carga un respaldo: adjunta los archivos .json al mensaje."),

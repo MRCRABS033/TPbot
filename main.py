@@ -2,7 +2,8 @@ import asyncio
 import discord
 from discord.ext import commands
 
-from src.core.config import TOKEN, logger
+from src.core.config import MONGODB_URI, TOKEN, logger
+from src.data.database import Database
 from services.storage import load_data, load_hunteds
 from src.shared.vocation_thumbnails import load_vocation_thumbnails
 
@@ -21,6 +22,7 @@ INITIAL_EXTENSIONS = [
     "src.channels.boosted.page",
     "src.channels.bazaar.page",
     "src.channels.tpbot.page",
+    "src.admin.config",
     "src.admin.cleanup",
     "src.admin.backup",
     "src.admin.owner",
@@ -38,6 +40,11 @@ async def setup_hook():
 bot.setup_hook = setup_hook
 
 async def main():
+    if not MONGODB_URI:
+        raise ValueError("Falta MONGODB_URI en el archivo .env")
+    bot.data = Database(MONGODB_URI)
+    await bot.data.prepare()
+
     # 1. Cargar personajes guardados desde el JSON
     load_data()
     load_hunteds()

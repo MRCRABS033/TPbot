@@ -17,6 +17,10 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("Falta DISCORD_TOKEN en el archivo .env")
 
+# --- BASE DE DATOS ---
+# Ej: mongodb://localhost:27017/tibia?directConnection=true (el nombre de la base va en la URI)
+MONGODB_URI = os.getenv("MONGODB_URI")
+
 # --- ESTADO COMPARTIDO ---
 WATCHED_PLAYERS = {}  # { char_key: { "char_name": str, "tibia_link": str, "owner": str } }
 PLAYERS_STATE = {}    # { char_key: { "level": int, "last_death_time": str } }
