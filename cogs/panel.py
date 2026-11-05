@@ -4,25 +4,18 @@ los personajes del grupo y los hunteds sin escribir comandos.
 
 - #tpbot: el panel del grupo siempre queda al final del canal. La lista (con nivel de ingreso
   y actual) se ve al pulsar Listar. El canal se limpia cada 12 horas (ver cogs/cleanup.py).
-- #hunteds: la lista de hunteds online lleva los botones de hunteds (ver hunted_tracker).
+- #hunteds tiene su propio panel: ver channels/hunteds/page.py.
 Los botones siguen funcionando aunque el bot se reinicie (vistas persistentes).
 """
 import discord
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_TPBOT, find_channel
-from src.core.config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
+from src.core.config import WATCHED_PLAYERS, logger
 from src.shared.task_utils import resilient
 from src.shared import roster
 from src.shared.discord_utils import send_or_update_embed
-
-MAX_SELECT_OPTIONS = 25  # Límite de Discord por menú desplegable
-
-
-def _hunted_online_keys(interaction: discord.Interaction):
-    cog = interaction.client.get_cog("HuntedTracker")
-    return cog.online_keys if cog else set()
-
+from src.shared.panel_ui import BUTTON_STYLE, ICON_ADD, ICON_LIST, ICON_REMOVE, ICON_SEARCH, MAX_SELECT_OPTIONS, remove_view
 
 # --- FORMULARIOS ---
 class GroupAddModal(discord.ui.Modal, title="Agregar personaje al grupo"):
@@ -52,71 +45,7 @@ class GroupRemoveModal(discord.ui.Modal, title="Eliminar personaje del grupo"):
         await interaction.response.send_message(embed=roster.remove_group_member(self.character.value))
 
 
-class HuntedAddModal(discord.ui.Modal, title="Agregar hunted"):
-    character = discord.ui.TextInput(label="Personaje", placeholder="Nombre exacto en Tibia", max_length=40)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        logger.info(f"🎛️ Panel: {interaction.user} agrega hunted '{self.character.value}'")
-        await interaction.response.defer(thinking=True)
-        await interaction.followup.send(embed=await roster.add_hunted(self.character.value, str(interaction.user)))
-
-
-class HuntedSearchModal(discord.ui.Modal, title="Buscar hunted"):
-    character = discord.ui.TextInput(label="Personaje", placeholder="Nombre del hunted", max_length=40)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            embed=roster.build_hunted_embed(self.character.value, _hunted_online_keys(interaction)), ephemeral=True
-        )
-
-
-class HuntedRemoveModal(discord.ui.Modal, title="Eliminar hunted"):
-    character = discord.ui.TextInput(label="Personaje", placeholder="Nombre del hunted", max_length=40)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        logger.info(f"🎛️ Panel: {interaction.user} elimina hunted '{self.character.value}'")
-        await interaction.response.send_message(embed=roster.remove_hunted(self.character.value))
-
-
-# --- MENÚS PARA ELIMINAR ---
-class RemoveSelect(discord.ui.Select):
-    """Menú desplegable con los personajes; al elegir uno se elimina y se avisa en el canal."""
-
-    def __init__(self, players: dict, remove_func, placeholder: str):
-        options = [
-            discord.SelectOption(
-                label=data["char_name"],
-                value=key,
-                description=(
-                    f"Dueño: {data['owner']} · Nivel {data.get('current_level', '?')}"
-                    if "owner" in data
-                    else f"Nivel {data.get('level', '?')} · {data.get('vocation', '')}"
-                )[:100],
-            )
-            for key, data in sorted(players.items(), key=lambda kv: kv[1]["char_name"].lower())
-        ]
-        super().__init__(placeholder=placeholder, options=options[:MAX_SELECT_OPTIONS])
-        self.remove_func = remove_func
-
-    async def callback(self, interaction: discord.Interaction):
-        logger.info(f"🎛️ Panel: {interaction.user} elimina '{self.values[0]}'")
-        result = self.remove_func(self.values[0])
-        await interaction.response.edit_message(content="Listo.", view=None)
-        await interaction.followup.send(embed=result)
-
-
-def _remove_view(players, remove_func, placeholder):
-    view = discord.ui.View(timeout=120)
-    view.add_item(RemoveSelect(players, remove_func, placeholder))
-    return view
-
-
 # --- PANELES ---
-# Símbolos monocromáticos (blancos) en vez de emojis de color
-ICON_ADD, ICON_SEARCH, ICON_LIST, ICON_REMOVE = "＋", "⚲", "≡", "✕"
-BUTTON_STYLE = discord.ButtonStyle.secondary
-
-
 class GroupPanelView(discord.ui.View):
     """Panel de personajes del grupo (se publica en #tpbot)."""
 
@@ -148,40 +77,7 @@ class GroupPanelView(discord.ui.View):
             await interaction.response.send_modal(GroupRemoveModal())
         else:
             await interaction.response.send_message(
-                view=_remove_view(WATCHED_PLAYERS, roster.remove_group_member, "Elige el personaje a eliminar"),
-                ephemeral=True,
-            )
-
-
-class HuntedPanelView(discord.ui.View):
-    """Panel de hunteds (se publica en #hunteds)."""
-
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label=f"{ICON_ADD}  Agregar", style=BUTTON_STYLE, custom_id="hunted_panel:add")
-    async def add(self, interaction: discord.Interaction, button):
-        await interaction.response.send_modal(HuntedAddModal())
-
-    @discord.ui.button(label=f"{ICON_SEARCH}  Buscar", style=BUTTON_STYLE, custom_id="hunted_panel:search")
-    async def search(self, interaction: discord.Interaction, button):
-        await interaction.response.send_modal(HuntedSearchModal())
-
-    @discord.ui.button(label=f"{ICON_LIST}  Listar", style=BUTTON_STYLE, custom_id="hunted_panel:list")
-    async def list(self, interaction: discord.Interaction, button):
-        await interaction.response.send_message(
-            embed=roster.build_hunted_list_embed(_hunted_online_keys(interaction)), ephemeral=True
-        )
-
-    @discord.ui.button(label=f"{ICON_REMOVE}  Eliminar", style=BUTTON_STYLE, custom_id="hunted_panel:remove")
-    async def remove(self, interaction: discord.Interaction, button):
-        if not HUNTED_PLAYERS:
-            await interaction.response.send_message(embed=roster.build_hunted_list_embed(set()), ephemeral=True)
-        elif len(HUNTED_PLAYERS) > MAX_SELECT_OPTIONS:
-            await interaction.response.send_modal(HuntedRemoveModal())
-        else:
-            await interaction.response.send_message(
-                view=_remove_view(HUNTED_PLAYERS, roster.remove_hunted, "Elige el hunted a eliminar"),
+                view=remove_view(WATCHED_PLAYERS, roster.remove_group_member, "Elige el personaje a eliminar"),
                 ephemeral=True,
             )
 
@@ -190,9 +86,8 @@ class Panel(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.group_list_message = {}
-        # Registra las vistas para que los botones ya publicados sigan funcionando tras reiniciar
+        # Registra la vista para que los botones ya publicados sigan funcionando tras reiniciar
         bot.add_view(GroupPanelView())
-        bot.add_view(HuntedPanelView())
         self.update_group_list.start()
 
     def cog_unload(self):

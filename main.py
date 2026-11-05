@@ -16,7 +16,7 @@ INITIAL_EXTENSIONS = [
     "src.channels.frees.page",
     "src.channels.empleado.page",
     "src.channels.onlines.page",
-    "cogs.hunted_tracker",
+    "src.channels.hunteds.page",
     "cogs.bosses",
     "cogs.bazaar",
     "cogs.panel",
