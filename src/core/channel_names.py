@@ -8,7 +8,7 @@ CHANNEL_TPBOT = "tpbot"
 # Avisos de muertes (death_tracker)
 CHANNEL_DEATHS = "cementerio"
 
-# Lista automática de jugadores Free Account online (free_tracker, !free)
+# Lista automática de jugadores Free Account online (channels/frees, !free)
 CHANNEL_FREES = "frees"
 
 # Lista automática de personajes monitoreados online (watched_tracker)

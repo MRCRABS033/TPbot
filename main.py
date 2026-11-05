@@ -13,7 +13,7 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 INITIAL_EXTENSIONS = [
     "cogs.death_tracker",
-    "cogs.free_tracker",
+    "src.channels.frees.page",
     "cogs.watched_players",
     "cogs.watched_tracker",
     "cogs.hunted_tracker",

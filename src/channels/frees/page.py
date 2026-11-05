@@ -1,19 +1,14 @@
-import asyncio
-import time
 import discord
 from discord.ext import commands, tasks
 
 from src.core.channel_names import CHANNEL_FREES, find_channel
-from src.core.config import logger
+from src.core.config import WORLD, logger
 from src.shared.task_utils import resilient
 from src.shared.discord_utils import move_list_to_bottom, send_or_update_embed
 from src.shared.online_embeds import build_grouped_online_embeds, player_url
 from src.shared.vocation_thumbnails import thumbnail_files
-from src.api.http import create_session
-from src.api.tibiadata import fetch_player_data, fetch_world_online_players
-
-# Cuánto tiempo se recuerda si una cuenta es free (evita consultar a todos los jugadores cada minuto)
-ACCOUNT_STATUS_TTL = 60 * 60  # 1 hora
+from src.api import tibiadata
+from src.channels.frees.service import FreeService
 
 
 class FreeTracker(commands.Cog):
@@ -22,53 +17,23 @@ class FreeTracker(commands.Cog):
     Se edita cada minuto (sin un mensaje por cada conexión).
     """
 
-    def __init__(self, bot):
+    def __init__(self, bot, service):
         self.bot = bot
+        self.service = service
         self.free_embed_message = {}
-        self.account_cache = {}       # { nombre: (es_free, hora_de_consulta) }
         self.last_list_embed = None   # Última lista generada (la usa !free)
         self.update_free_players.start()
 
     def cog_unload(self):
         self.update_free_players.cancel()
 
-    async def _is_free(self, session, semaphore, name):
-        """True/False si es free, o None si no se pudo consultar."""
-        cached = self.account_cache.get(name)
-        if cached and time.monotonic() - cached[1] < ACCOUNT_STATUS_TTL:
-            return cached[0]
-
-        async with semaphore:
-            res = await fetch_player_data(session, name)
-        if not res or not res.get("character_info"):
-            return None  # No se cachea: se reintenta en la siguiente revisión
-
-        is_free = "free" in res["character_info"].get("account_status", "").lower()
-        self.account_cache[name] = (is_free, time.monotonic())
-        return is_free
-
     @resilient
     @tasks.loop(seconds=60)
     async def update_free_players(self):
-        world = "Quidera"
-        logger.info(f"🔄 Consultando Free Accounts online en {world}...")
-        semaphore = asyncio.Semaphore(8)
+        logger.info(f"🔄 Consultando Free Accounts online en {WORLD}...")
+        free_players = await self.service.get_free_players(WORLD)
 
-        async with create_session() as session:
-            online_players = await fetch_world_online_players(session, world)
-            statuses = await asyncio.gather(
-                *(self._is_free(session, semaphore, p.get("name")) for p in online_players)
-            )
-
-        free_players = [p for p, is_free in zip(online_players, statuses) if is_free]
-
-        # Limpia del caché a los que ya no están online
-        online_names = {p.get("name") for p in online_players}
-        for name in list(self.account_cache):
-            if name not in online_names:
-                del self.account_cache[name]
-
-        self.last_list_embed = self._build_list_embeds(free_players, world)
+        self.last_list_embed = self._build_list_embeds(free_players, WORLD)
         # Siempre se edita el mismo mensaje (entre o salga alguien)
         await send_or_update_embed(self.bot, self.free_embed_message, CHANNEL_FREES, self.last_list_embed)
 
@@ -107,4 +72,4 @@ class FreeTracker(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(FreeTracker(bot))
+    await bot.add_cog(FreeTracker(bot, FreeService(tibiadata)))
