@@ -16,10 +16,10 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.patches import Circle, FancyBboxPatch
 
-from src.core.config import TEAM_NAME, WATCHED_PLAYERS
+from src.core.config import TEAM_NAME
 
 # --- FUENTES ---
-FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "fonts")
+FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "assets", "fonts")
 for _file in ("Cinzel.ttf", "Lato-Regular.ttf", "Lato-Bold.ttf"):
     _path = os.path.join(FONT_DIR, _file)
     if os.path.exists(_path):
@@ -61,16 +61,16 @@ def _draw_watermark(ax, cx, cy, scale):
             fontfamily=TITLE_FONT, fontsize=40 * scale * PT, zorder=0)
 
 
-def build_group_progress_chart():
+def build_group_progress_chart(players):
     """
     Niveles ganados por cada personaje desde que ingresó al grupo, de mayor a menor.
     El primero (si ganó niveles) se destaca como MVP. Devuelve un discord.File o None si no hay grupo.
     """
-    if not WATCHED_PLAYERS:
+    if not players:
         return None
 
     rows = []
-    for data in WATCHED_PLAYERS.values():
+    for data in players.values():
         curr = data.get("current_level", 0)
         initial = data.get("initial_level", curr)
         rows.append((data["char_name"], data["owner"], curr - initial, initial, curr))

@@ -2,7 +2,7 @@
 # El bot busca los canales por nombre exacto.
 # Si renombras un canal en Discord, actualízalo también aquí.
 
-# Avisos de registro y subida de nivel (death_tracker)
+# Panel del grupo (channels/tpbot)
 CHANNEL_TPBOT = "tpbot"
 
 # Avisos de muertes (channels/cementerio)
