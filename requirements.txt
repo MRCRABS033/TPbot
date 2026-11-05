@@ -13,3 +13,4 @@ python-dotenv==1.0.1
 pytz==2024.1
 matplotlib==3.11.2
 tibia.py==6.4.0
+pymongo==4.17.0
