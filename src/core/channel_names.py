@@ -31,7 +31,7 @@ CHANNEL_BOSSES = "bosses"
 # Anuncios de las actividades en grupo creadas desde #bosses
 CHANNEL_ANUNCIOS = "anuncios"
 
-# Catálogo del Char Bazaar de tibia.com con filtros y fichas detalladas (bazaar)
+# Catálogo del Char Bazaar de tibia.com con filtros y fichas detalladas (channels/bazaar)
 CHANNEL_BAZAAR = "bazaar"
 
 

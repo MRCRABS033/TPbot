@@ -1,74 +1,31 @@
-"""
-Char Bazaar de tibia.com.
-
-- #bazaar: panel con el botón "Buscar personajes" (siempre al final del canal).
-- Al pulsarlo: filtros (vocación, PvP, mundo, orden y, en "Más filtros", nivel y precio).
-- "Buscar" publica el catálogo como imagen (12 personajes por página) con botones para cambiar
-  de página y para ver la ficha completa de un personaje por su código.
-- !ver <código> muestra la ficha de la última búsqueda del canal. !bazaar muestra el panel.
-"""
+"""#bazaar: botones, menús y formularios del panel, los filtros y el catálogo."""
 import asyncio
 import io
-import time
 
 import discord
-from discord import app_commands
-from discord.ext import commands, tasks
-from PIL import Image
 
-from src.core.channel_names import CHANNEL_BAZAAR, find_channel
-from src.core.config import BAZAAR_PROXY_URL, logger
+from src.channels.bazaar.embeds import build_details_embed
+from src.channels.bazaar.service import BazaarFilters, parse_number
+from src.core.config import logger
 from src.core.constants.bazaar import (
-    AUCTION_URL,
-    BAZAAR_URL,
-    IMAGE_CACHE_SECONDS,
-    PAGE_LOAD_TIMEOUT,
-    MAX_PAGES_FOR_PRICE_FILTER,
+    MAX_WORLD_RESULTS,
     ORDER_OPTIONS,
+    PAGE_LOAD_TIMEOUT,
     PVP_OPTIONS,
     SEARCH_TIMEOUT,
     VOCATION_OPTIONS,
-    MAX_WORLD_RESULTS,
 )
-from services.bazaar import (
-    BazaarFilters,
-    BazaarSearch,
-    TooManyResults,
-    download_outfits,
-    enum_text,
-    format_tc,
-)
-from services.bazaar_image import render_catalog
-from src.shared.discord_utils import send_or_update_embed
-from src.shared.task_utils import resilient
-from src.api import tibiacom
 
-COLOR = discord.Color.from_rgb(139, 92, 246)
-PANEL_TITLE = "Bazar de personajes"
-MAX_STORED_SEARCHES = 50
-NO_VALUE = "_todos"
+NO_VALUE = "_todos"  # Valor de las opciones "Todos/Todas" en los menús (Discord no admite valores vacíos)
 # Ancho del botón de mundo en CARACTERES (no píxeles), para igualarlo a los menús.
 # Cada carácter son ~8 px. Máximo 80 (límite de Discord). Tras cambiarlo hay que reiniciar el bot.
 WIDE_BUTTON_CHARS = 46
 BLANK = "⠀"  # Espacio invisible que Discord no recorta
 MAX_BUTTON_LABEL = 80
-CARDS, LIST = "cards", "list"  # Vistas del catálogo: imagen con cartas o lista de texto  # Valor de las opciones "Todos/Todas" en los menús (Discord no admite valores vacíos)
+CARDS, LIST = "cards", "list"  # Vistas del catálogo: imagen con cartas o lista de texto
 
 
 # --- UTILIDADES ---
-def parse_number(text):
-    """'5000', '5.000', '5k', '1,5k' -> entero. Vacío -> None. Inválido -> ValueError."""
-    text = (text or "").strip().lower().replace(" ", "")
-    if not text:
-        return None
-    multiplier = 1000 if text.endswith("k") else 1
-    text = text.rstrip("k")
-    if multiplier == 1000:
-        text = text.replace(",", ".")
-        return int(float(text) * 1000)
-    return int(text.replace(".", "").replace(",", ""))
-
-
 def _options(options, current):
     return [
         discord.SelectOption(label=label, value=value or NO_VALUE, default=(value == current))
@@ -91,68 +48,8 @@ def _select_value(select):
     return None if value == NO_VALUE else value
 
 
-# --- VISTA EN LISTA ---
-def build_list_text(entries):
-    """Catálogo en texto: dos líneas por personaje, con enlace a la subasta y tiempo restante en vivo."""
-    lines = []
-    for code, auction in entries:
-        bid = "actual" if "current" in str(enum_text(auction.bid_type)).lower() else "mínima"
-        end = int(auction.auction_end.timestamp())
-        lines.append(
-            f"**[{code:02d}]** · [{auction.name}]({AUCTION_URL.format(auction_id=auction.auction_id)}) · "
-            f"Nivel {auction.level} · {enum_text(auction.vocation)}\n"
-            f"\u2003 {auction.world} · **{format_tc(auction.bid)}** ({bid}) · termina <t:{end}:R>"
-        )
-    return "\n\n".join(lines)
-
-
 # --- FICHA DETALLADA ---
-def build_details_embed(code, auction, details, has_outfit):
-    bid_label = "Oferta actual" if "current" in str(enum_text(auction.bid_type)).lower() else "Oferta mínima"
-    end = int(auction.auction_end.timestamp())
-    embed = discord.Embed(
-        title=f"[{code:02d}] {auction.name}",
-        url=AUCTION_URL.format(auction_id=auction.auction_id),
-        description=f"Nivel **{auction.level}** · {enum_text(auction.vocation)} · {auction.world}",
-        color=COLOR,
-    )
-    embed.add_field(name=bid_label, value=format_tc(auction.bid), inline=True)
-    embed.add_field(name="Termina", value=f"<t:{end}:f>\n<t:{end}:R>", inline=True)
-
-    if details:
-        g = details["general"]
-        embed.add_field(name="Vida / Maná", value=f"{g.get('Hit Points', '?')} / {g.get('Mana', '?')}", inline=True)
-        embed.add_field(name="Capacidad", value=g.get("Capacity", "?"), inline=True)
-        embed.add_field(name="Velocidad", value=g.get("Speed", "?"), inline=True)
-        embed.add_field(name="Blessings", value=g.get("Blessings", "?"), inline=True)
-
-        if details["skills"]:
-            skills = sorted(details["skills"], key=lambda s: s[1], reverse=True)
-            embed.add_field(name="Skills", value="\n".join(f"{name}: **{level}**" for name, level in skills),
-                            inline=True)
-
-        extras = [
-            ("Experiencia", g.get("Experience")),
-            ("Achievement Points", g.get("Achievement Points")),
-            ("Charm Points", f"{g.get('Available Charm Points', '?')} libres · {g.get('Spent Charm Points', '?')} usados"
-             if g.get("Available Charm Points") else None),
-            ("Boss Points", g.get("Boss Points")),
-            ("Mounts / Outfits", f"{g.get('Mounts', '?')} / {g.get('Outfits', '?')}"),
-            ("Gold", g.get("Gold")),
-            ("Creado", g.get("Creation Date")),
-            ("Transferencia", g.get("Regular World Transfer")),
-        ]
-        embed.add_field(name="Extras", value="\n".join(f"{k}: **{v}**" for k, v in extras if v), inline=True)
-        embed.set_footer(text="Datos de tibia.com al momento de pedir la ficha")
-    else:
-        embed.set_footer(text="No se pudo leer la ficha completa en tibia.com; pulsa el título para verla allí")
-
-    if has_outfit:
-        embed.set_thumbnail(url="attachment://outfit.png")
-    return embed
-
-
-async def send_details(send, search, code_text, ephemeral):
+async def send_details(send, service, search, code_text, ephemeral):
     """Busca el código en la búsqueda y envía su ficha con `send` (ctx.send o followup.send)."""
     try:
         code = int(code_text.strip().lstrip("#[").rstrip("]"))
@@ -165,37 +62,12 @@ async def send_details(send, search, code_text, ephemeral):
                    ephemeral=ephemeral)
         return
 
-    details = await tibiacom.fetch_auction_details(auction.auction_id)
-    outfits = await download_outfits([auction.outfit.image_url])
-    outfit = outfits.get(auction.outfit.image_url)
+    details = await service.auction_details(auction.auction_id)
+    outfit = await service.outfit_png(auction.outfit.image_url)
     kwargs = {"embed": build_details_embed(code, auction, details, outfit is not None), "ephemeral": ephemeral}
     if outfit is not None:
-        big = outfit.resize((outfit.width * 2, outfit.height * 2), Image.NEAREST)
-        buffer = io.BytesIO()
-        big.save(buffer, format="PNG")
-        buffer.seek(0)
-        kwargs["file"] = discord.File(buffer, filename="outfit.png")
+        kwargs["file"] = discord.File(io.BytesIO(outfit), filename="outfit.png")
     await send(**kwargs)
-
-
-def describe_error(error):
-    """Explicación corta del fallo al consultar tibia.com (se muestra a quien buscó)."""
-    if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
-        return "tibia.com tardó demasiado en responder. Intenta de nuevo en un momento."
-    kind = tibiacom.classify_error(error)
-    if kind == tibiacom.ERROR_FORBIDDEN:
-        if BAZAAR_PROXY_URL:
-            return ("tibia.com bloqueó la conexión (error 403) **aunque se usó el proxy**. "
-                    "Puede ser una IP del proxy bloqueada: intenta de nuevo; si sigue, revisa el proxy.")
-        return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403) y **no hay "
-                "proxy configurado**: el bot no encontró la variable BAZAAR_PROXY_URL.")
-    if kind == tibiacom.ERROR_PROXY:
-        return "no se pudo conectar con el proxy configurado (BAZAAR_PROXY_URL). Revisa que esté activo."
-    if kind == tibiacom.ERROR_MAINTENANCE:
-        return "tibia.com está en mantenimiento. Intenta más tarde."
-    if kind == tibiacom.ERROR_NETWORK:
-        return f"error de conexión con tibia.com ({error}). Intenta de nuevo en un momento."
-    return f"error inesperado ({type(error).__name__}). Intenta de nuevo en un momento."
 
 
 # --- CATÁLOGO (RESULTADOS) ---
@@ -212,13 +84,14 @@ async def _with_timeout(coro, what, seconds=15):
 class CodeModal(discord.ui.Modal, title="Ver ficha"):
     code = discord.ui.TextInput(label="Código del personaje", placeholder="Ej: 03", max_length=6)
 
-    def __init__(self, search):
+    def __init__(self, service, search):
         super().__init__()
+        self.service = service
         self.search = search
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await send_details(interaction.followup.send, self.search, self.code.value, ephemeral=True)
+        await send_details(interaction.followup.send, self.service, self.search, self.code.value, ephemeral=True)
 
 
 class PageModal(discord.ui.Modal, title="Ir a página"):
@@ -329,7 +202,7 @@ class ResultsView(discord.ui.View):
 
     @discord.ui.button(label="⚲  Ver código", style=discord.ButtonStyle.primary, custom_id="results:code")
     async def view_code(self, interaction: discord.Interaction, button):
-        await interaction.response.send_modal(CodeModal(self.search))
+        await interaction.response.send_modal(CodeModal(self.cog.service, self.search))
 
     @discord.ui.button(label="≡  Ver en lista", style=discord.ButtonStyle.secondary, custom_id="results:switch")
     async def switch(self, interaction: discord.Interaction, button):
@@ -407,7 +280,7 @@ class FiltersView(discord.ui.View):
         super().__init__(timeout=15 * 60)
         self.cog = cog
         self.filters = filters or BazaarFilters()
-        self.worlds = sorted(cog.worlds) if cog and cog.worlds else []
+        self.worlds = cog.service.sorted_worlds()
         self.world_query = None    # Texto buscado con "⚲ Mundo"
         self.world_matches = None  # Mundos que coinciden con la búsqueda (None = aún no se buscó)
         self._build_selects()
@@ -529,198 +402,18 @@ class FiltersView(discord.ui.View):
 class BazaarPanelView(discord.ui.View):
     """Botón del panel (persistente: funciona aunque el bot se reinicie)."""
 
-    def __init__(self):
+    def __init__(self, cog):
         super().__init__(timeout=None)
+        self.cog = cog
 
     @discord.ui.button(label="⚲  Buscar personajes", style=discord.ButtonStyle.primary, custom_id="bazaar:search")
     async def open_filters(self, interaction: discord.Interaction, button):
-        cog = interaction.client.get_cog("Bazaar")
-        if not cog.worlds:
+        cog = self.cog
+        if not cog.service.worlds:
             await interaction.response.defer(ephemeral=True, thinking=True)
-            await cog._load_worlds()
+            await cog.service.load_worlds()
             view = FiltersView(cog)
             await interaction.followup.send(view.summary(), view=view, ephemeral=True)
             return
         view = FiltersView(cog)
         await interaction.response.send_message(view.summary(), view=view, ephemeral=True)
-
-
-def build_panel_embed():
-    embed = discord.Embed(
-        title=PANEL_TITLE,
-        url=BAZAAR_URL,
-        description=(
-            "Busca personajes en venta en el Char Bazaar de Tibia.\n"
-            "Filtra por vocación, nivel, precio, mundo y tipo de PvP.\n\n"
-            "Los resultados salen como catálogo: cada personaje tiene un **código** para ver su ficha completa."
-        ),
-        color=COLOR,
-    )
-    return embed
-
-
-# --- COG ---
-class Bazaar(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.client = None
-        self.worlds = set()          # Mundos de Tibia (para validar el filtro)
-        self.panel_message = {}      # { guild_id: id del panel en #bazaar }
-        self.searches = {}           # { message_id: BazaarSearch }
-        self.last_search = {}        # { channel_id: BazaarSearch } para !ver
-        bot.add_view(BazaarPanelView())
-
-    async def cog_load(self):
-        self.client = tibiacom.create_client()
-        if tibiacom.uses_proxy(self.client):
-            logger.info("🛒 Bazaar: las consultas a tibia.com saldrán por el proxy configurado")
-        else:
-            logger.info("Bazaar: sin proxy; las consultas a tibia.com salen directo desde este servidor")
-        self.keep_panel.start()
-
-    async def cog_unload(self):
-        self.keep_panel.cancel()
-        if self.client:
-            await tibiacom.close_client(self.client)
-
-    async def render_page(self, search, page, mode=CARDS):
-        """(embed, archivo o None) de una página del catálogo, o (None, None) si no hay resultados."""
-        count = await search.count()
-        if not count:
-            return None, None
-        total = search.total_pages()
-        header = (f"{search.filters.describe()}\n**{f'{count:,}'.replace(',', '.')}** subastas · "
-                  f"orden: {search.filters.order}")
-
-        embed = discord.Embed(title=PANEL_TITLE, url=BAZAAR_URL, description=header, color=COLOR)
-        if search.requested_by:
-            embed.set_author(name=f"Buscado por {search.requested_by}")
-        embed.set_footer(text=f"Página {page + 1} de {total} · Usa Ver código o !ver <código> para la ficha")
-
-        if mode == LIST:
-            entries = await search.page(page)
-            if not entries:
-                return None, None
-            embed.description = f"{header}\n\n{build_list_text(entries)}"
-            return embed, None
-
-        # Una página ya dibujada se reutiliza (no se vuelve a generar la imagen)
-        cached = search.images.get(page)
-        if cached and time.monotonic() - cached[0] < IMAGE_CACHE_SECONDS:
-            png = cached[1]
-        else:
-            entries = await search.page(page)
-            if not entries:
-                return None, None
-            outfits = await download_outfits([a.outfit.image_url for _, a in entries])
-            png = await asyncio.to_thread(render_catalog, entries, outfits, f"PÁGINA {page + 1} DE {total}")
-            search.images[page] = (time.monotonic(), png)
-
-        embed.set_image(url="attachment://bazaar.png")
-        return embed, discord.File(io.BytesIO(png), filename="bazaar.png")
-
-    async def publish_search(self, channel, filters, user, mode=CARDS):
-        """Publica el catálogo de una búsqueda. Devuelve el mensaje, o un texto si falla o no hay resultados."""
-        search = BazaarSearch(self.client, filters)
-        search.requested_by = user.display_name
-        try:
-            embed, file = await asyncio.wait_for(self.render_page(search, 0, mode), timeout=PAGE_LOAD_TIMEOUT)
-        except TooManyResults as e:
-            limit = MAX_PAGES_FOR_PRICE_FILTER * 25
-            return (f"⚠️ Hay **{e.results:,}** subastas con estos filtros. Para filtrar por precio la búsqueda "
-                    f"debe tener como máximo **{limit}**: acótala con vocación, nivel o mundo.").replace(",", ".")
-        except Exception as e:
-            logger.error(f"❌ Error al buscar en el bazaar: {e!r}")
-            return f"⚠️ No se pudo consultar el bazaar de tibia.com: {describe_error(e)}"
-        if not embed:
-            return f"No se encontraron subastas con estos filtros: {filters.describe()}"
-
-        view = ResultsView(self, search, mode=mode)
-        message = await channel.send(embed=embed, view=view, **({"file": file} if file else {}))
-        view.message = message
-        self.searches[message.id] = search
-        self.last_search[channel.id] = search
-        if len(self.searches) > MAX_STORED_SEARCHES:
-            self.searches.pop(next(iter(self.searches)))
-        logger.info(f"🛒 Búsqueda en el bazaar de {user}: {filters.describe()}")
-        return message
-
-    # --- PANEL SIEMPRE AL FINAL DE #bazaar ---
-    @resilient
-    @tasks.loop(minutes=1)
-    async def keep_panel(self):
-        if not self.worlds:
-            await self._load_worlds()
-        await send_or_update_embed(self.bot, self.panel_message, CHANNEL_BAZAAR, build_panel_embed(),
-                                   view=BazaarPanelView(), keep_last=True)
-
-    @keep_panel.before_loop
-    async def before_keep_panel(self):
-        await self.bot.wait_until_ready()
-
-    async def _load_worlds(self):
-        try:
-            self.worlds = await tibiacom.fetch_available_worlds(self.client)
-        except Exception as e:
-            logger.warning(f"⚠️ No se pudo cargar la lista de mundos del bazaar: {e}")
-
-    # --- COMANDOS ---
-    @commands.hybrid_command(name="bazaar", description="Muestra el panel para buscar personajes en el Char Bazaar")
-    @app_commands.describe(mundo="Mundo para filtrar (escribe para buscar entre todos)")
-    async def bazaar_command(self, ctx, *, mundo: str = None):
-        logger.info(f"📩 Comando !bazaar ejecutado por {ctx.author} (mundo: {mundo})")
-        if not mundo:
-            if find_channel([ctx.channel], CHANNEL_BAZAAR):
-                # En #bazaar ya está el panel: solo se mueve al final (sin crear otro)
-                if ctx.interaction:
-                    await ctx.send("El panel está al final del canal.", ephemeral=True)
-                else:
-                    try:
-                        await ctx.message.delete()
-                    except discord.HTTPException:
-                        pass
-                await self.keep_panel()
-                return
-            await ctx.send(embed=build_panel_embed(), view=BazaarPanelView())
-            return
-
-        # Con mundo: se abren los filtros con ese mundo ya elegido
-        await ctx.defer(ephemeral=True)
-        if not self.worlds:
-            await self._load_worlds()
-        world = next((w for w in self.worlds if w.lower() == mundo.strip().lower()), None)
-        if not world:
-            await ctx.send(f"⚠️ No existe el mundo **{mundo}** en Tibia.", ephemeral=True)
-            return
-        view = FiltersView(self, BazaarFilters(world=world))
-        await ctx.send(view.summary(), view=view, ephemeral=True)
-
-    @bazaar_command.autocomplete("mundo")
-    async def world_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Buscador de /bazaar: muestra los mundos que coinciden con lo que se va escribiendo."""
-        if not self.worlds:
-            await self._load_worlds()
-        q = current.strip().lower()
-        worlds = sorted(self.worlds)
-        found = [w for w in worlds if w.lower().startswith(q)] + [w for w in worlds if q in w.lower() and not w.lower().startswith(q)]
-        return [app_commands.Choice(name=w, value=w) for w in found[:25]]
-
-    @commands.hybrid_command(name="ver", description="Muestra la ficha de un personaje de la última búsqueda del bazaar")
-    @app_commands.describe(code="Código del personaje en el catálogo (ej: 03)")
-    async def view_command(self, ctx, code: str):
-        logger.info(f"📩 Comando !ver {code} ejecutado por {ctx.author}")
-        search = self.last_search.get(ctx.channel.id)
-        if not search:
-            await ctx.send("⚠️ No hay ninguna búsqueda reciente del bazaar en este canal. Usa **!bazaar** para buscar.")
-            return
-        await ctx.defer()
-
-        async def send(**kwargs):
-            kwargs.pop("ephemeral", None)
-            await ctx.send(**kwargs)
-
-        await send_details(send, search, code, ephemeral=False)
-
-
-async def setup(bot):
-    await bot.add_cog(Bazaar(bot))

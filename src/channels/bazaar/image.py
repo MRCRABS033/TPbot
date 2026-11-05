@@ -7,9 +7,9 @@ import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-from services.bazaar import enum_text, format_tc, format_time_left
+from src.channels.bazaar.service import enum_text, format_tc, format_time_left
 
-FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts")
+FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "assets", "fonts")
 
 # --- COLORES ---
 BACKGROUND = "#100c17"

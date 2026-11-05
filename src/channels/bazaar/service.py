@@ -1,20 +1,21 @@
 """
 Búsqueda en el Char Bazaar de tibia.com.
 
-- Las consultas a tibia.com están en src/api/tibiacom.py.
+- Las consultas a tibia.com están en src/api/tibiacom.py (se reciben como parámetro `api`).
 - El precio no es un filtro de tibia.com: se filtra en el bot sobre los resultados.
 """
 import asyncio
 import io
+import logging
 import math
 import time
 from dataclasses import dataclass, replace
 
 from PIL import Image
 
-from src.core.config import logger
 from src.core.constants.bazaar import (
     CARDS_PER_IMAGE,
+    IMAGE_CACHE_SECONDS,
     MAX_PAGES_FOR_PRICE_FILTER,
     PARALLEL_REQUESTS,
     TIBIA_PAGE_SIZE,
@@ -22,7 +23,22 @@ from src.core.constants.bazaar import (
     PVP_OPTIONS,
     VOCATION_OPTIONS,
 )
-from src.api import tibiacom
+
+logger = logging.getLogger("TibiaBot")
+MAX_STORED_SEARCHES = 50
+
+
+def parse_number(text):
+    """'5000', '5.000', '5k', '1,5k' -> entero. Vacío -> None. Inválido -> ValueError."""
+    text = (text or "").strip().lower().replace(" ", "")
+    if not text:
+        return None
+    multiplier = 1000 if text.endswith("k") else 1
+    text = text.rstrip("k")
+    if multiplier == 1000:
+        text = text.replace(",", ".")
+        return int(float(text) * 1000)
+    return int(text.replace(".", "").replace(",", ""))
 
 
 def enum_text(value):
@@ -69,9 +85,9 @@ class BazaarFilters:
     def with_changes(self, **changes):
         return replace(self, **changes)
 
-    def to_api(self):
+    def to_api(self, api):
         order_by, direction = dict(ORDER_OPTIONS)[self.order]
-        return tibiacom.build_auction_filters(
+        return api.build_auction_filters(
             vocation=self.vocation,
             pvp_type=self.pvp_type,
             world=self.world,
@@ -132,7 +148,8 @@ class BazaarSearch:
       al final, sin ordenar).
     """
 
-    def __init__(self, client, filters: BazaarFilters):
+    def __init__(self, api, client, filters: BazaarFilters):
+        self._api = api
         self.client = client
         self.filters = filters
         self._tibia_pages = {}       # { número de página de tibia.com: [subastas] }
@@ -148,7 +165,7 @@ class BazaarSearch:
 
     async def _tibia_page(self, number):
         if number not in self._tibia_pages:
-            bazaar = await tibiacom.fetch_auctions_page(self.client, number, self.filters.to_api())
+            bazaar = await self._api.fetch_auctions_page(self.client, number, self.filters.to_api(self._api))
             self._tibia_pages[number] = list(bazaar.entries)
             self.tibia_results = bazaar.results_count
             self.total_tibia_pages = bazaar.total_pages or 0
@@ -220,11 +237,11 @@ class BazaarSearch:
 _outfit_cache = {}  # { url: Image RGBA | None }
 
 
-async def download_outfits(urls):
+async def download_outfits(api, urls):
     """{url: Image RGBA} de los outfits (los que no se puedan descargar quedan fuera)."""
     pending = [u for u in dict.fromkeys(urls) if u and u not in _outfit_cache]
     if pending:
-        for url, data in (await tibiacom.fetch_images(pending)).items():
+        for url, data in (await api.fetch_images(pending)).items():
             try:
                 image = Image.open(io.BytesIO(data))
                 image.seek(0)  # Primer fotograma si es animado
@@ -232,3 +249,107 @@ async def download_outfits(urls):
             except Exception as e:
                 logger.warning(f"⚠️ No se pudo leer el outfit {url}: {e}")
     return {u: _outfit_cache[u] for u in urls if u in _outfit_cache}
+
+
+# --- SERVICIO DEL CANAL ---
+class BazaarService:
+    def __init__(self, api, render_catalog, proxy_configured=False, clock=time.monotonic):
+        self._api = api
+        self._render_catalog = render_catalog
+        self._proxy_configured = proxy_configured
+        self._clock = clock
+        self.client = None
+        self.worlds = set()     # Mundos de Tibia (para validar el filtro)
+        self.searches = {}      # { message_id: BazaarSearch }
+        self.last_search = {}   # { channel_id: BazaarSearch } para !ver
+
+    def start(self):
+        """Crea el cliente de tibia.com. Devuelve True si sale por el proxy."""
+        self.client = self._api.create_client()
+        return self._api.uses_proxy(self.client)
+
+    async def close(self):
+        if self.client:
+            await self._api.close_client(self.client)
+
+    # --- MUNDOS ---
+    async def load_worlds(self):
+        try:
+            self.worlds = await self._api.fetch_available_worlds(self.client)
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo cargar la lista de mundos del bazaar: {e}")
+
+    def sorted_worlds(self):
+        return sorted(self.worlds)
+
+    def find_world(self, name):
+        """Nombre oficial del mundo, sin importar mayúsculas. None si no existe."""
+        return next((w for w in self.worlds if w.lower() == name.strip().lower()), None)
+
+    def worlds_matching(self, text):
+        """Mundos que contienen el texto; primero los que empiezan por él."""
+        q = text.strip().lower()
+        worlds = self.sorted_worlds()
+        return [w for w in worlds if w.lower().startswith(q)] + [w for w in worlds if q in w.lower() and not w.lower().startswith(q)]
+
+    # --- BÚSQUEDAS ---
+    def new_search(self, filters, requested_by):
+        search = BazaarSearch(self._api, self.client, filters)
+        search.requested_by = requested_by
+        return search
+
+    def remember(self, message_id, channel_id, search):
+        """Guarda la búsqueda publicada (para !ver); se conservan solo las más recientes."""
+        self.searches[message_id] = search
+        self.last_search[channel_id] = search
+        if len(self.searches) > MAX_STORED_SEARCHES:
+            self.searches.pop(next(iter(self.searches)))
+
+    async def catalog_png(self, search, page, total):
+        """Imagen de una página del catálogo, o None si la página no tiene subastas."""
+        # Una página ya dibujada se reutiliza (no se vuelve a generar la imagen)
+        cached = search.images.get(page)
+        if cached and self._clock() - cached[0] < IMAGE_CACHE_SECONDS:
+            return cached[1]
+
+        entries = await search.page(page)
+        if not entries:
+            return None
+        outfits = await download_outfits(self._api, [a.outfit.image_url for _, a in entries])
+        png = await asyncio.to_thread(self._render_catalog, entries, outfits, f"PÁGINA {page + 1} DE {total}")
+        search.images[page] = (self._clock(), png)
+        return png
+
+    # --- FICHA ---
+    async def auction_details(self, auction_id):
+        return await self._api.fetch_auction_details(auction_id)
+
+    async def outfit_png(self, url):
+        """Outfit del personaje al doble de tamaño (PNG), o None si no se pudo descargar."""
+        outfit = (await download_outfits(self._api, [url])).get(url)
+        if outfit is None:
+            return None
+        big = outfit.resize((outfit.width * 2, outfit.height * 2), Image.NEAREST)
+        buffer = io.BytesIO()
+        big.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    # --- ERRORES ---
+    def describe_error(self, error):
+        """Explicación corta del fallo al consultar tibia.com (se muestra a quien buscó)."""
+        if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+            return "tibia.com tardó demasiado en responder. Intenta de nuevo en un momento."
+        kind = self._api.classify_error(error)
+        if kind == self._api.ERROR_FORBIDDEN:
+            if self._proxy_configured:
+                return ("tibia.com bloqueó la conexión (error 403) **aunque se usó el proxy**. "
+                        "Puede ser una IP del proxy bloqueada: intenta de nuevo; si sigue, revisa el proxy.")
+            return ("tibia.com bloqueó la conexión desde el servidor donde corre el bot (error 403) y **no hay "
+                    "proxy configurado**: el bot no encontró la variable BAZAAR_PROXY_URL.")
+        if kind == self._api.ERROR_PROXY:
+            return "no se pudo conectar con el proxy configurado (BAZAAR_PROXY_URL). Revisa que esté activo."
+        if kind == self._api.ERROR_MAINTENANCE:
+            return "tibia.com está en mantenimiento. Intenta más tarde."
+        if kind == self._api.ERROR_NETWORK:
+            return f"error de conexión con tibia.com ({error}). Intenta de nuevo en un momento."
+        return f"error inesperado ({type(error).__name__}). Intenta de nuevo en un momento."
