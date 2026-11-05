@@ -64,5 +64,6 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")  # La consola de Windows no siempre admite emojis
     load_dotenv()
     sys.exit(asyncio.run(migrate(parse_args())))
