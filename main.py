@@ -2,8 +2,10 @@ import asyncio
 import discord
 from discord.ext import commands
 
+from src.api import tibiadata
 from src.core.config import MONGODB_URI, TOKEN, logger
 from src.data.database import Database
+from src.shared.cached_api import CachedTibiaApi
 from src.shared.vocation_thumbnails import load_vocation_thumbnails
 
 intents = discord.Intents.default()
@@ -41,6 +43,7 @@ bot.setup_hook = setup_hook
 async def main():
     if not MONGODB_URI:
         raise ValueError("Falta MONGODB_URI en el archivo .env")
+    bot.tibia_api = CachedTibiaApi(tibiadata)
     bot.data = Database(MONGODB_URI)
     await bot.data.prepare()
 

@@ -148,9 +148,9 @@ class DeathTracker(commands.Cog):
         return name, f"https://www.tibia.com/community/?subtopic=characters&name={name.replace(' ', '+')}"
 
 
-def build_service(database):
-    return DeathService(tibiadata, tibiawiki, database.players)
+def build_service(database, api=tibiadata):
+    return DeathService(api, tibiawiki, database.players)
 
 
 async def setup(bot):
-    await bot.add_cog(DeathTracker(bot, build_service(bot.data), bot.data.guilds))
+    await bot.add_cog(DeathTracker(bot, build_service(bot.data, bot.tibia_api), bot.data.guilds))

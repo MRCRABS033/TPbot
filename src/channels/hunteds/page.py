@@ -6,7 +6,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from src.api import tibiadata
 from src.api.tibiawiki import vocation_image_url
 from src.channels.hunteds.service import ALREADY_LISTED, NOT_FOUND, DeathAlert, HuntedService
 from src.core.channel_names import CHANNEL_HUNTEDS
@@ -321,5 +320,5 @@ class HuntedTracker(commands.Cog):
 
 
 async def setup(bot):
-    service = HuntedService(tibiadata, bot.data.hunteds, bot.data.guilds, LoginTracker, parse_api_time)
+    service = HuntedService(bot.tibia_api, bot.data.hunteds, bot.data.guilds, LoginTracker, parse_api_time)
     await bot.add_cog(HuntedTracker(bot, service, bot.data.guilds))

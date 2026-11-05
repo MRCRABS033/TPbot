@@ -7,7 +7,6 @@ from src.core.config import logger
 from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.task_utils import resilient
 from src.shared.discord_utils import move_list_to_bottom, send_or_update_embed
-from src.api import tibiadata
 from src.shared.login_times import LoginTracker, parse_api_time
 from src.shared.online_embeds import build_grouped_online_embeds
 from src.shared.vocation_thumbnails import thumbnail_files
@@ -212,6 +211,6 @@ class OnlineCommands(commands.Cog):
 
 
 async def setup(bot):
-    service = OnlineService(tibiadata, bot.data.players, LoginTracker, parse_api_time)
+    service = OnlineService(bot.tibia_api, bot.data.players, LoginTracker, parse_api_time)
     await bot.add_cog(WatchedTracker(bot, service, bot.data.guilds))
     await bot.add_cog(OnlineCommands(bot, bot.data.guilds))

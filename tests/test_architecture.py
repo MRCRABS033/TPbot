@@ -58,6 +58,7 @@ class BotLoadTests(unittest.IsolatedAsyncioTestCase):
 
         bot = commands.Bot(command_prefix="!", intents=main.intents, help_command=None)
         bot.data = FakeDatabase()
+        bot.tibia_api = main.tibiadata
         async with bot:
             for extension in main.INITIAL_EXTENSIONS:
                 await bot.load_extension(extension)

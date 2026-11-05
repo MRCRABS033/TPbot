@@ -8,7 +8,6 @@ from src.shared.task_utils import resilient
 from src.shared.discord_utils import move_list_to_bottom, send_or_update_embed
 from src.shared.online_embeds import build_grouped_online_embeds, player_url
 from src.shared.vocation_thumbnails import thumbnail_files
-from src.api import tibiadata
 from src.channels.frees.service import FreeService
 
 
@@ -82,4 +81,4 @@ class FreeTracker(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(FreeTracker(bot, FreeService(tibiadata), bot.data.guilds))
+    await bot.add_cog(FreeTracker(bot, FreeService(bot.tibia_api), bot.data.guilds))
