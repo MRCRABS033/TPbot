@@ -20,21 +20,12 @@ def load_data():
     except Exception as e:
         logger.error(f"❌ Error al cargar {DATA_FILE}: {e}")
 
-def _save_json(path, data):
-    """Guardado atómico: escribe a un temporal y renombra. Si el proceso muere
-    a mitad de escritura, el archivo bueno queda intacto (antes un corte dejaba
-    el JSON truncado y al cargar se perdía todo el estado)."""
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-    os.replace(tmp, path)
-
-
 def save_data():
     """Guarda el diccionario WATCHED_PLAYERS en el archivo JSON."""
     try:
-        _save_json(DATA_FILE, WATCHED_PLAYERS)
-        logger.info(f"💾 Datos guardados en {DATA_FILE}")
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(WATCHED_PLAYERS, f, indent=4, ensure_ascii=False)
+            logger.info(f"💾 Datos guardados en {DATA_FILE}")
     except Exception as e:
         logger.error(f"❌ Error al guardar {DATA_FILE}: {e}")
 
@@ -56,6 +47,7 @@ def load_hunteds():
 def save_hunteds():
     """Guarda el diccionario HUNTED_PLAYERS en el archivo JSON."""
     try:
-        _save_json(HUNTED_FILE, HUNTED_PLAYERS)
+        with open(HUNTED_FILE, "w", encoding="utf-8") as f:
+            json.dump(HUNTED_PLAYERS, f, indent=4, ensure_ascii=False)
     except Exception as e:
         logger.error(f"❌ Error al guardar {HUNTED_FILE}: {e}")

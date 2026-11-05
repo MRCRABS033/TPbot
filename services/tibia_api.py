@@ -1,8 +1,6 @@
 import logging
 from datetime import datetime
 
-from config import WORLD
-
 logger = logging.getLogger("TibiaBot")
 
 async def fetch_player_data(session, character_name: str):
@@ -43,7 +41,7 @@ async def fetch_player_data(session, character_name: str):
     return None
 
 
-async def fetch_world_online_players(session, world_name: str = WORLD):
+async def fetch_world_online_players(session, world_name: str = "Quidera"):
     """Consulta los jugadores online de un mundo en la API de TibiaData v4."""
     url = f"https://api.tibiadata.com/v4/world/{world_name}"
     logger.info(f"🌐 Consultando jugadores online en el mundo '{world_name}'...")
@@ -76,20 +74,4 @@ async def fetch_boosted_boss(session):
                 logger.warning(f"⚠️ HTTP {response.status} al consultar el boss boosted")
     except Exception as e:
         logger.error(f"❌ Error al consultar el boss boosted: {e}")
-    return None
-
-async def fetch_boosted_creature(session):
-    """Devuelve las creaturas boosted del día según TibiaData v4. Devuelve {"name", "image_url"} o None si falla."""
-    url = "https://api.tibiadata.com/v4/creatures"
-    try:
-        async with session.get(url) as response:
-            if response.status == 200:
-                data = await response.json()
-                boosted = data.get("creatures", {}).get("boosted", {})
-                if boosted.get("name"):
-                    return {"name": boosted["name"], "image_url": boosted.get("image_url")}
-            else:
-                logger.warning(f"⚠️ HTTP {response.status} al consultar el boosted creature")
-    except Exception as e:
-        logger.error(f"❌ Error al consultar el boosted creature: {e}")
     return None

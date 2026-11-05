@@ -5,7 +5,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from channels import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
-from config import WATCHED_PLAYERS, WORLD, logger
+from config import WATCHED_PLAYERS, logger
 from services.task_utils import resilient
 from services.discord_utils import send_or_update_embed
 from services.storage import save_data
@@ -13,7 +13,6 @@ from services.tibia_api import fetch_player_data, fetch_world_online_players
 from services.login_times import LoginTracker, parse_api_time
 from services.online_embeds import build_grouped_online_embeds
 from services.tibia_wiki import vocation_image_url
-from services.http import new_session
 
 
 class WatchedTracker(commands.Cog):
@@ -55,7 +54,7 @@ class WatchedTracker(commands.Cog):
             await ctx.send(f"⚠️ El personaje **{character_name}** no está en la lista de monitoreo.")
             return
 
-        async with new_session() as session:
+        async with aiohttp.ClientSession() as session:
             res = await fetch_player_data(session, info["char_name"])
         char_info = (res or {}).get("character_info")
         if not char_info:
@@ -129,7 +128,7 @@ class WatchedTracker(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def update_online_watched_players(self):
-        world = WORLD
+        world = "Quidera"
         logger.info(f"🟢 Verificando personajes monitoreados en {world}...")
 
         if not WATCHED_PLAYERS:
@@ -138,7 +137,7 @@ class WatchedTracker(commands.Cog):
         # Buscar el canal para alertas de nivel
         level_channel = self._get_level_channel()
 
-        async with new_session() as session:
+        async with aiohttp.ClientSession() as session:
             online_world_players = await fetch_world_online_players(session, world)
             online_lookup = {
                 p.get("name", "").lower(): p for p in (online_world_players or [])

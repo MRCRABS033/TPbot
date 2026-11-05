@@ -1,11 +1,8 @@
 import asyncio
-import os
-
 import discord
 from discord.ext import commands
 
 from config import TOKEN, logger
-from services.http import close_session
 from services.storage import load_data, load_hunteds
 from services.vocation_thumbnails import load_vocation_thumbnails
 
@@ -21,7 +18,6 @@ INITIAL_EXTENSIONS = [
     "cogs.watched_tracker",
     "cogs.hunted_tracker",
     "cogs.bosses",
-    "cogs.creature_boosted",
     "cogs.bazaar",
     "cogs.panel",
     "cogs.cleanup",
@@ -33,20 +29,15 @@ INITIAL_EXTENSIONS = [
     "cogs.commands.owner",
     "cogs.commands.online",
     "cogs.commands.help",
-
 ]
 
 
 async def setup_hook():
     # Outfits de vocación ampliados para las listas de #onlines, #frees y #hunteds
     await load_vocation_thumbnails()
-    # Registra los comandos de barra (/) en Discord para que aparezcan en el menú.
-    # Solo cuando se pide (SYNC_SLASH_COMMANDS=1): sincronizar en cada arranque
-    # gasta el rate limit de Discord y con reinicios seguidos puede bloquearlo.
-    # Pon la variable en Dokploy, despliega una vez y quítala.
-    if os.getenv("SYNC_SLASH_COMMANDS") == "1":
-        synced = await bot.tree.sync()
-        logger.info(f"Comandos de barra sincronizados: {len(synced)}")
+    # Registra los comandos de barra (/) en Discord para que aparezcan en el menú
+    synced = await bot.tree.sync()
+    logger.info(f"Comandos de barra sincronizados: {len(synced)}")
 
 bot.setup_hook = setup_hook
 
@@ -55,14 +46,12 @@ async def main():
     load_data()
     load_hunteds()
 
-    try:
-        async with bot:
-            for extension in INITIAL_EXTENSIONS:
-                await bot.load_extension(extension)
-            logger.info(f"✅ Extensiones cargadas: {len(INITIAL_EXTENSIONS)}")
-            await bot.start(TOKEN)
-    finally:
-        await close_session()
+    async with bot:
+        for extension in INITIAL_EXTENSIONS:
+            await bot.load_extension(extension)
+            logger.info(f"Extension cargada: {extension}")
+            
+        await bot.start(TOKEN)
 
 if __name__ == "__main__":
     asyncio.run(main())
