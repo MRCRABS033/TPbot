@@ -68,15 +68,15 @@ class DeathTracker(commands.Cog):
             description=(
                 f"Se muestran las {MAX_DEATHS_LISTED} más recientes."
                 if len(deaths) > MAX_DEATHS_LISTED
-                else "De la más reciente a la más antigua."
+                else "De la más antigua a la más reciente."
             ),
             color=discord.Color.dark_red(),
         )
         header.set_footer(text=footer)
         await ctx.send(embed=header)
 
-        # Cada muerte con el mismo aviso que se publica en #cementerio
-        for _, data, death in deaths[:MAX_DEATHS_LISTED]:
+        # Cada muerte con el mismo aviso que se publica en #cementerio; la más reciente queda de última
+        for _, data, death in reversed(deaths[:MAX_DEATHS_LISTED]):
             res = result.details[data["char_name"]]
             embed, thumbnail = await self._build_death_message(
                 data["tibia_link"], data["owner"], data.get("current_level", 0), res["character_info"], death

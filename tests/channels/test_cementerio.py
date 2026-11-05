@@ -231,6 +231,25 @@ class PageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.send.await_count, 2)  # Encabezado + aviso
         self.assertEqual(ctx.send.await_args_list[0].kwargs["embed"].title, "Muertes de hoy · 1")
 
+    async def test_comando_muertes_deja_la_mas_reciente_de_ultima(self):
+        deaths = [{"time": t, "level": n, "killers": [], "assists": []} for n, t in ((1, TODAY), (2, LATER_TODAY))]
+        service, _ = make_service({"Ana": response(deaths)})
+        cog, page = self.make_cog(service)
+        ctx = MagicMock(defer=AsyncMock(), send=AsyncMock(), guild=MagicMock(id=GUILD_ID))
+        await page.DeathTracker.deaths_today.callback(cog, ctx)
+        titles = [call.kwargs["embed"].title for call in ctx.send.await_args_list[1:]]
+        self.assertEqual(titles, ["Ana murió a nivel 1", "Ana murió a nivel 2"])
+        self.assertEqual(ctx.send.await_args_list[0].kwargs["embed"].description, "De la más antigua a la más reciente.")
+
+    async def test_comando_con_muchas_muertes_muestra_las_mas_recientes(self):
+        deaths = [{"time": f"2026-11-04T15:{n:02d}:00Z", "level": n, "killers": [], "assists": []} for n in range(12)]
+        service, _ = make_service({"Ana": response(deaths)})
+        cog, page = self.make_cog(service)
+        ctx = MagicMock(defer=AsyncMock(), send=AsyncMock(), guild=MagicMock(id=GUILD_ID))
+        await page.DeathTracker.deaths_today.callback(cog, ctx)
+        titles = [call.kwargs["embed"].title for call in ctx.send.await_args_list[1:]]
+        self.assertEqual(titles, [f"Ana murió a nivel {n}" for n in range(2, 12)])
+
     async def test_comando_sin_configurar_pide_config(self):
         service, _ = make_service({})
         cog, page = self.make_cog(service, {})
