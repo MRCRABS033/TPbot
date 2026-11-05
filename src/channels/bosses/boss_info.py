@@ -1,6 +1,6 @@
 """
 Información de bosses desde TibiaWiki (en inglés). La lectura del wikitext está en
-services/wikitext.py y las traducciones de términos en constants/tibia.py.
+wikitext.py y las traducciones de términos en src/core/constants/tibia.py.
 
 fetch_boss_info(session, nombre) devuelve un dict con:
   hp, exp, bosstiaryclass, cooldown, location, notes   (texto listo para Discord)
@@ -16,7 +16,7 @@ from src.core.config import logger
 from src.core.constants.tibia import DAMAGE_MODS, ELEMENTS, NO_RARITY, RARITIES
 from src.api.fandom import fetch_wikitext
 from src.api.tibiawiki import wiki_file_names_for
-from services.wikitext import clean_wikitext, find_template, parse_fields, parse_template, split_params
+from src.channels.bosses.wikitext import clean_wikitext, find_template, parse_fields, parse_template, split_params
 
 _cache = {}  # { nombre: dict | None }
 
