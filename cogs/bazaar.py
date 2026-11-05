@@ -16,9 +16,9 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from PIL import Image
 
-from channels import CHANNEL_BAZAAR, find_channel
-from config import BAZAAR_PROXY_URL, logger
-from constants.bazaar import (
+from src.core.channel_names import CHANNEL_BAZAAR, find_channel
+from src.core.config import BAZAAR_PROXY_URL, logger
+from src.core.constants.bazaar import (
     AUCTION_URL,
     BAZAAR_URL,
     IMAGE_CACHE_SECONDS,
@@ -39,8 +39,8 @@ from services.bazaar import (
     format_tc,
 )
 from services.bazaar_image import render_catalog
-from services.discord_utils import send_or_update_embed
-from services.task_utils import resilient
+from src.shared.discord_utils import send_or_update_embed
+from src.shared.task_utils import resilient
 from src.api import tibiacom
 
 COLOR = discord.Color.from_rgb(139, 92, 246)

@@ -3,15 +3,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from channels import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
-from config import WATCHED_PLAYERS, logger
-from services.task_utils import resilient
-from services.discord_utils import send_or_update_embed
+from src.core.channel_names import CHANNEL_LEVEL, CHANNEL_LEVEL_ALT, CHANNEL_ONLINES, find_channel
+from src.core.config import WATCHED_PLAYERS, logger
+from src.shared.task_utils import resilient
+from src.shared.discord_utils import send_or_update_embed
 from services.storage import save_data
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data, fetch_world_online_players
-from services.login_times import LoginTracker, parse_api_time
-from services.online_embeds import build_grouped_online_embeds
+from src.shared.login_times import LoginTracker, parse_api_time
+from src.shared.online_embeds import build_grouped_online_embeds
 from src.api.tibiawiki import vocation_image_url
 
 

@@ -4,9 +4,9 @@ import discord
 from discord.ext import commands, tasks
 import pytz
 
-from channels import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_channel
-from config import WATCHED_PLAYERS, logger
-from services.task_utils import resilient
+from src.core.channel_names import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_channel
+from src.core.config import WATCHED_PLAYERS, logger
+from src.shared.task_utils import resilient
 from services.storage import save_data
 
 # --- PUBLICACIÓN AUTOMÁTICA DEL RANKING ---

@@ -1,7 +1,7 @@
 import discord
-from channels import find_channel
-from config import logger
-from services.vocation_thumbnails import THUMBNAIL_FILE_PREFIX, thumbnail_files
+from src.core.channel_names import find_channel
+from src.core.config import logger
+from src.shared.vocation_thumbnails import THUMBNAIL_FILE_PREFIX, thumbnail_files
 
 # Cuántos mensajes recientes se revisan al buscar la lista que el bot publicó antes de reiniciarse
 HISTORY_LOOKUP_LIMIT = 30

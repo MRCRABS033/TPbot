@@ -1,7 +1,7 @@
 from discord.ext import commands
 
-from config import logger
-from services.roster import build_group_progress
+from src.core.config import logger
+from src.shared.roster import build_group_progress
 
 
 class ListCommands(commands.Cog):

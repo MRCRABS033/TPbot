@@ -10,11 +10,11 @@ Los botones siguen funcionando aunque el bot se reinicie (vistas persistentes).
 import discord
 from discord.ext import commands, tasks
 
-from channels import CHANNEL_TPBOT, find_channel
-from config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
-from services.task_utils import resilient
-from services import roster
-from services.discord_utils import send_or_update_embed
+from src.core.channel_names import CHANNEL_TPBOT, find_channel
+from src.core.config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
+from src.shared.task_utils import resilient
+from src.shared import roster
+from src.shared.discord_utils import send_or_update_embed
 
 MAX_SELECT_OPTIONS = 25  # Límite de Discord por menú desplegable
 

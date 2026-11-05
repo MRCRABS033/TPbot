@@ -3,15 +3,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from channels import CHANNEL_HUNTEDS
+from src.core.channel_names import CHANNEL_HUNTEDS
 from cogs.death_tracker import DeathTracker
 from cogs.panel import HuntedPanelView
-from config import HUNTED_PLAYERS, WORLD, logger
-from services.task_utils import resilient
-from services.discord_utils import broadcast_embed, send_or_update_embed
-from services.login_times import LoginTracker, parse_api_time
-from services.online_embeds import build_grouped_online_embeds, player_url
-from services.roster import add_hunted, build_hunted_list_embed, remove_hunted
+from src.core.config import HUNTED_PLAYERS, WORLD, logger
+from src.shared.task_utils import resilient
+from src.shared.discord_utils import broadcast_embed, send_or_update_embed
+from src.shared.login_times import LoginTracker, parse_api_time
+from src.shared.online_embeds import build_grouped_online_embeds, player_url
+from src.shared.roster import add_hunted, build_hunted_list_embed, remove_hunted
 from services.storage import save_hunteds
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data, fetch_world_online_players

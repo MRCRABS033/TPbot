@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 
-from config import logger
+from src.core.config import logger
 
 # (comando, descripción) por sección. Mantener actualizado al agregar comandos nuevos.
 COMMAND_SECTIONS = {

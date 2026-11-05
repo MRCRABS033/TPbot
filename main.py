@@ -2,9 +2,9 @@ import asyncio
 import discord
 from discord.ext import commands
 
-from config import TOKEN, logger
+from src.core.config import TOKEN, logger
 from services.storage import load_data, load_hunteds
-from services.vocation_thumbnails import load_vocation_thumbnails
+from src.shared.vocation_thumbnails import load_vocation_thumbnails
 
 intents = discord.Intents.default()
 intents.message_content = True

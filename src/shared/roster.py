@@ -5,9 +5,9 @@ Cada función devuelve un Embed listo para enviar.
 """
 import discord
 
-from config import HUNTED_PLAYERS, PLAYERS_STATE, WATCHED_PLAYERS, WORLD, logger
-from services.charts import build_group_progress_chart
-from services.online_embeds import player_url
+from src.core.config import HUNTED_PLAYERS, PLAYERS_STATE, WATCHED_PLAYERS, WORLD, logger
+from src.shared.charts import build_group_progress_chart
+from src.shared.online_embeds import player_url
 from services.storage import save_data, save_hunteds
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data

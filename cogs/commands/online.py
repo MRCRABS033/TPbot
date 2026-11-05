@@ -1,9 +1,9 @@
 from discord.ext import commands
 
-from channels import CHANNEL_ONLINES, find_channel
-from config import logger
-from services.discord_utils import move_list_to_bottom
-from services.vocation_thumbnails import thumbnail_files
+from src.core.channel_names import CHANNEL_ONLINES, find_channel
+from src.core.config import logger
+from src.shared.discord_utils import move_list_to_bottom
+from src.shared.vocation_thumbnails import thumbnail_files
 
 
 class OnlineCommands(commands.Cog):

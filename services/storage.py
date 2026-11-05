@@ -1,6 +1,6 @@
 import json
 import os
-from config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
+from src.core.config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
 
 DATA_FILE = "watched_players.json"
 HUNTED_FILE = "hunteds.json"

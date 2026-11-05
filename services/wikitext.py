@@ -4,7 +4,7 @@ y coordenadas de mapa. No sabe nada de bosses: sirve para cualquier página de l
 """
 import re
 
-from constants.tibia import TIBIAMAPS_URL
+from src.core.constants.tibia import TIBIAMAPS_URL
 
 
 def split_params(text):

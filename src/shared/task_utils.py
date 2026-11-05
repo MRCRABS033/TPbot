@@ -2,7 +2,7 @@ import asyncio
 
 from discord.ext import tasks
 
-from config import logger
+from src.core.config import logger
 
 # Espera antes de reintentar una tarea que falló (evita reintentos sin pausa si el error se repite)
 RESTART_DELAY = 30

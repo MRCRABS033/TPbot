@@ -20,9 +20,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import discord
 
-from channels import CHANNEL_DEATHS, find_channel
+from src.core.channel_names import CHANNEL_DEATHS, find_channel
 from cogs.death_tracker import DeathTracker
-from config import TOKEN, WATCHED_PLAYERS, logger
+from src.core.config import TOKEN, WATCHED_PLAYERS, logger
 from services.storage import load_data
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data, fetch_world_online_players

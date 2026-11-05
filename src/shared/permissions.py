@@ -1,5 +1,5 @@
-from channels import _normalize
-from constants.roles import ADMIN_ROLES
+from src.core.channel_names import _normalize
+from src.core.constants.roles import ADMIN_ROLES
 
 
 def is_bot_admin(ctx):

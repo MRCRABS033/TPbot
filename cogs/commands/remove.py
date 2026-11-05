@@ -1,8 +1,8 @@
 from discord import app_commands
 from discord.ext import commands
 
-from config import logger
-from services.roster import remove_group_member
+from src.core.config import logger
+from src.shared.roster import remove_group_member
 
 
 class RemoveCommand(commands.Cog):

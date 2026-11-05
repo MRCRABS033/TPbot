@@ -19,8 +19,8 @@ from bs4 import BeautifulSoup
 from tibiapy import enums
 from tibiapy.models import AuctionFilters
 
-from config import BAZAAR_PROXY_URL, logger
-from constants.bazaar import AUCTION_URL, DETAILS_CACHE_SECONDS, REQUEST_TIMEOUT
+from src.core.config import BAZAAR_PROXY_URL, logger
+from src.core.constants.bazaar import AUCTION_URL, DETAILS_CACHE_SECONDS, REQUEST_TIMEOUT
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (TPbot)"}
 # Skills que se muestran en la ficha (la página también trae bonus de tareas que no interesan)

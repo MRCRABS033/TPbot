@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands, tasks
 
-from channels import CHANNEL_DEATHS, find_channel
-from config import PLAYERS_STATE, WATCHED_PLAYERS, logger
-from services.task_utils import resilient
+from src.core.channel_names import CHANNEL_DEATHS, find_channel
+from src.core.config import PLAYERS_STATE, WATCHED_PLAYERS, logger
+from src.shared.task_utils import resilient
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data
 from src.api.tibiawiki import creature_file_name, fetch_wiki_image, vocation_file_name

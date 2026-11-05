@@ -12,8 +12,8 @@ fetch_boss_info(session, nombre) devuelve un dict con:
 """
 import re
 
-from config import logger
-from constants.tibia import DAMAGE_MODS, ELEMENTS, NO_RARITY, RARITIES
+from src.core.config import logger
+from src.core.constants.tibia import DAMAGE_MODS, ELEMENTS, NO_RARITY, RARITIES
 from src.api.fandom import fetch_wikitext
 from src.api.tibiawiki import wiki_file_names_for
 from services.wikitext import clean_wikitext, find_template, parse_fields, parse_template, split_params

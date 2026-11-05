@@ -14,9 +14,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
-from constants.roles import NO_PERMISSION_MESSAGE
-from services.permissions import is_bot_admin
+from src.core.config import HUNTED_PLAYERS, WATCHED_PLAYERS, logger
+from src.core.constants.roles import NO_PERMISSION_MESSAGE
+from src.shared.permissions import is_bot_admin
 from services.storage import DATA_FILE, HUNTED_FILE, save_data, save_hunteds
 
 MAX_BACKUP_SIZE = 5 * 1024 * 1024  # 5 MB

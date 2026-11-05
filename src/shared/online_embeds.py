@@ -1,7 +1,7 @@
 import discord
 
 from src.api.tibiawiki import VOCATION_OUTFITS, vocation_key
-from services.vocation_thumbnails import vocation_thumbnail
+from src.shared.vocation_thumbnails import vocation_thumbnail
 
 VOCATION_GROUP_NAMES = {
     "knight": "Knights",

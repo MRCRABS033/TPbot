@@ -17,11 +17,11 @@ from discord.ext import commands, tasks
 import pytz
 from PIL import Image, ImageSequence
 
-from channels import CHANNEL_ANUNCIOS, CHANNEL_BOSSES, find_channel
-from config import WATCHED_PLAYERS, logger
-from services.discord_utils import _get_previous_message
-from services.online_embeds import player_url
-from services.task_utils import resilient
+from src.core.channel_names import CHANNEL_ANUNCIOS, CHANNEL_BOSSES, find_channel
+from src.core.config import WATCHED_PLAYERS, logger
+from src.shared.discord_utils import _get_previous_message
+from src.shared.online_embeds import player_url
+from src.shared.task_utils import resilient
 from src.api.http import create_session
 from src.api.tibiadata import fetch_boosted_boss
 from services.boss_info import fetch_boss_info

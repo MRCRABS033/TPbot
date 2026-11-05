@@ -3,12 +3,12 @@ import time
 import discord
 from discord.ext import commands, tasks
 
-from channels import CHANNEL_FREES, find_channel
-from config import logger
-from services.task_utils import resilient
-from services.discord_utils import move_list_to_bottom, send_or_update_embed
-from services.online_embeds import build_grouped_online_embeds, player_url
-from services.vocation_thumbnails import thumbnail_files
+from src.core.channel_names import CHANNEL_FREES, find_channel
+from src.core.config import logger
+from src.shared.task_utils import resilient
+from src.shared.discord_utils import move_list_to_bottom, send_or_update_embed
+from src.shared.online_embeds import build_grouped_online_embeds, player_url
+from src.shared.vocation_thumbnails import thumbnail_files
 from src.api.http import create_session
 from src.api.tibiadata import fetch_player_data, fetch_world_online_players
 

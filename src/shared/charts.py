@@ -16,10 +16,10 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.patches import Circle, FancyBboxPatch
 
-from config import TEAM_NAME, WATCHED_PLAYERS
+from src.core.config import TEAM_NAME, WATCHED_PLAYERS
 
 # --- FUENTES ---
-FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts")
+FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "fonts")
 for _file in ("Cinzel.ttf", "Lato-Regular.ttf", "Lato-Bold.ttf"):
     _path = os.path.join(FONT_DIR, _file)
     if os.path.exists(_path):

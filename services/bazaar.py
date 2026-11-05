@@ -12,8 +12,8 @@ from dataclasses import dataclass, replace
 
 from PIL import Image
 
-from config import logger
-from constants.bazaar import (
+from src.core.config import logger
+from src.core.constants.bazaar import (
     CARDS_PER_IMAGE,
     MAX_PAGES_FOR_PRICE_FILTER,
     PARALLEL_REQUESTS,

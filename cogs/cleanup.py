@@ -8,7 +8,7 @@ from datetime import time, timedelta, timezone
 import discord
 from discord.ext import commands, tasks
 
-from channels import (
+from src.core.channel_names import (
     CHANNEL_BAZAAR,
     CHANNEL_BOSSES,
     CHANNEL_EMPLEADO,
@@ -21,10 +21,10 @@ from channels import (
     CHANNEL_TPBOT,
     find_channel,
 )
-from config import logger
-from constants.roles import NO_PERMISSION_MESSAGE
-from services.permissions import is_bot_admin
-from services.task_utils import resilient
+from src.core.config import logger
+from src.core.constants.roles import NO_PERMISSION_MESSAGE
+from src.shared.permissions import is_bot_admin
+from src.shared.task_utils import resilient
 
 # Todos los días a las 12:00 a. m. y 12:00 p. m. (hora de Colombia, UTC-5)
 CLEANUP_TZ = timezone(timedelta(hours=-5))
