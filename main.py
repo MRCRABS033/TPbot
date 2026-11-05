@@ -14,7 +14,7 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 INITIAL_EXTENSIONS = [
     "src.channels.cementerio.page",
     "src.channels.frees.page",
-    "cogs.watched_players",
+    "src.channels.empleado.page",
     "cogs.watched_tracker",
     "cogs.hunted_tracker",
     "cogs.bosses",

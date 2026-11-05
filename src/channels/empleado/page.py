@@ -1,13 +1,13 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import time, timedelta, timezone
 import asyncio
 import discord
 from discord.ext import commands, tasks
-import pytz
 
 from src.core.channel_names import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_channel
 from src.core.config import WATCHED_PLAYERS, logger
 from src.shared.task_utils import resilient
 from services.storage import save_data
+from src.channels.empleado.service import EmpleadoService, is_server_save, is_weekly_reset_day
 
 # --- PUBLICACIÓN AUTOMÁTICA DEL RANKING ---
 # Hora de Colombia (UTC-5, sin horario de verano)
@@ -19,8 +19,9 @@ RANKING_TIMES = [
 
 
 class WatchedPlayers(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, service):
         self.bot = bot
+        self.service = service
         # Último ranking diario y último anuncio del ganador por servidor (la limpieza los conserva)
         self.ranking_messages = {}
         self.winner_messages = {}
@@ -42,7 +43,7 @@ class WatchedPlayers(commands.Cog):
     async def show_weekly_top(self, ctx):
         """Muestra el ranking actual de la semana."""
         logger.info(f"📩 Comando !empleado ejecutado por {ctx.author}")
-        if not WATCHED_PLAYERS:
+        if not self.service.has_players():
             await ctx.send("📋 La lista de seguimiento está vacía.")
             return
 
@@ -52,7 +53,7 @@ class WatchedPlayers(commands.Cog):
     @resilient
     @tasks.loop(time=RANKING_TIMES)
     async def post_daily_ranking(self):
-        if not WATCHED_PLAYERS:
+        if not self.service.has_players():
             return
 
         channel = self._get_empleado_channel()
@@ -86,14 +87,7 @@ class WatchedPlayers(commands.Cog):
         return "nivel" if n == 1 else "niveles"
 
     async def _build_ranking_embed(self):
-        ranking = []
-        for data in WATCHED_PLAYERS.values():
-            curr = data.get("current_level", 0)
-            start = data.get("weekly_start_level", curr)
-            gained = max(0, curr - start)
-            ranking.append((data["char_name"], data["owner"], gained, curr, start))
-
-        ranking.sort(key=lambda x: x[2], reverse=True)
+        ranking = self.service.ranking()
 
         embed = discord.Embed(
             title="🏆 Empleado del mes",
@@ -108,7 +102,7 @@ class WatchedPlayers(commands.Cog):
         podium = [(1, "🥈", 1), (0, "🥇", 0), (2, "🥉", 1)]  # (posición, medalla, líneas vacías)
         if len(ranking) >= 3:
             for pos, medal, padding in podium:
-                char, owner, gained, curr, start = ranking[pos]
+                char, owner, gained, curr = ranking[pos]
                 embed.add_field(
                     name=blank,
                     value=(
@@ -119,7 +113,7 @@ class WatchedPlayers(commands.Cog):
                 )
         else:
             # Con menos de 3 personajes no hay podio: se muestran en orden
-            for medal, (char, owner, gained, curr, start) in zip(["🥇", "🥈"], ranking):
+            for medal, (char, owner, gained, curr) in zip(["🥇", "🥈"], ranking):
                 embed.add_field(
                     name=blank,
                     value=f"{self._center_over(medal, char)}\n**{char}**\n{owner}\n**+{gained}** {self._niveles(gained)}\nNivel actual: {curr}",
@@ -131,7 +125,7 @@ class WatchedPlayers(commands.Cog):
         entries = [
             f"`{idx}.` **{char}** · {owner}\n"
             f"  +{gained} {self._niveles(gained)} · Nivel actual: {curr}"
-            for idx, (char, owner, gained, curr, _) in enumerate(ranking[3:], start=4)
+            for idx, (char, owner, gained, curr) in enumerate(ranking[3:], start=4)
         ]
         if entries:
             embed.add_field(name=blank, value=blank, inline=False)  # Separación con el podio
@@ -152,13 +146,12 @@ class WatchedPlayers(commands.Cog):
     @resilient
     @tasks.loop(minutes=1)
     async def check_server_save(self):
-        germany_tz = pytz.timezone("Europe/Berlin")
-        now_germany = datetime.now(germany_tz)
+        now = self.service.now()
 
-        if now_germany.hour == 10 and now_germany.minute == 0:
+        if is_server_save(now):
             logger.info("⏰ Hora de Server Save detectada.")
 
-            if now_germany.weekday() == 6:
+            if is_weekly_reset_day(now):
                 await self.announce_weekly_winner()
                 await asyncio.sleep(60)
 
@@ -168,22 +161,11 @@ class WatchedPlayers(commands.Cog):
             logger.warning(f"⚠️ No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}' en Discord.")
             return
 
-        ranking = []
-        for key, data in WATCHED_PLAYERS.items():
-            curr = data.get("current_level", 0)
-            start = data.get("weekly_start_level", curr)
-            gained = max(0, curr - start)
-            ranking.append((data["char_name"], data["owner"], gained))
-
-            data["weekly_start_level"] = curr
-
-        save_data()
-
+        ranking = self.service.close_week()
         if not ranking:
             return
 
-        ranking.sort(key=lambda x: x[2], reverse=True)
-        winner_char, winner_owner, max_gained = ranking[0]
+        winner_char, winner_owner, max_gained, _ = ranking[0]
 
         embed = discord.Embed(
             title="👑 ¡EMPLEADO DE LA SEMANA! 👑",
@@ -202,4 +184,4 @@ class WatchedPlayers(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(WatchedPlayers(bot))
+    await bot.add_cog(WatchedPlayers(bot, EmpleadoService(WATCHED_PLAYERS, save_data)))
