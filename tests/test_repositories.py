@@ -114,6 +114,15 @@ class RepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await guilds.team_name(GUILD_B), "Tres Puntos")
         self.assertEqual(await guilds.world(GUILD_B), "Antica")
 
+    async def test_cierre_de_semana_por_servidor(self):
+        guilds = self.database.guilds
+        await guilds.set_world(GUILD_A, "Quidera")
+        self.assertIsNone(await guilds.week_closed_on(GUILD_A))
+        await guilds.set_week_closed_on(GUILD_A, "2026-11-08")
+        self.assertEqual(await guilds.week_closed_on(GUILD_A), "2026-11-08")
+        self.assertIsNone(await guilds.week_closed_on(GUILD_B))
+        self.assertEqual(await guilds.world(GUILD_A), "Quidera")  # No pisa lo demás
+
 
 class IsolationTests(unittest.TestCase):
     def test_la_uri_de_pruebas_no_apunta_a_la_base_real(self):

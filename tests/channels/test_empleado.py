@@ -4,11 +4,13 @@ import unittest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.channels.empleado.service import EmpleadoService, is_server_save, is_weekly_reset_day
+from src.channels.empleado.service import EmpleadoService, is_server_save, is_week_close_time
 from tests.fakes import GUILD_ID, FakeCharacterRepository, FakeGuildRepository
 
 SUNDAY_SAVE = datetime(2026, 11, 8, 10, 0)
+SUNDAY_BEFORE = datetime(2026, 11, 8, 9, 59)
 SUNDAY_LATER = datetime(2026, 11, 8, 10, 1)
+NEXT_SUNDAY = datetime(2026, 11, 15, 10, 0)
 MONDAY_SAVE = datetime(2026, 11, 9, 10, 0)
 
 
@@ -23,8 +25,8 @@ def make_players(count):
     return {f"p{i}": player(f"P{i}", 100 + i, start=100) for i in range(count)}
 
 
-def make_service(players, other_guilds=None, now=lambda: SUNDAY_SAVE):
-    return EmpleadoService(FakeCharacterRepository(players, other_guilds), now=now)
+def make_service(players, other_guilds=None, now=lambda: SUNDAY_SAVE, guilds=None):
+    return EmpleadoService(FakeCharacterRepository(players, other_guilds), guilds or FakeGuildRepository(), now=now)
 
 
 class EmpleadoServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -42,10 +44,13 @@ class EmpleadoServiceTests(unittest.IsolatedAsyncioTestCase):
         await make_service(players).ranking(GUILD_ID)
         self.assertEqual(players["a"]["weekly_start_level"], 100)
 
-    async def test_cerrar_semana_devuelve_ganador_y_reinicia(self):
+    async def test_cerrar_semana_reinicia_y_queda_registrado(self):
         players = {"a": player("Ana", 110, 100), "b": player("Beto", 300, 280)}
         service = make_service(players)
-        self.assertEqual((await service.close_week(GUILD_ID))[0].char, "Beto")
+        self.assertTrue(await service.week_is_open(GUILD_ID, SUNDAY_SAVE))
+        await service.close_week(GUILD_ID, SUNDAY_SAVE)
+        self.assertFalse(await service.week_is_open(GUILD_ID, SUNDAY_LATER))
+        self.assertTrue(await service.week_is_open(GUILD_ID, NEXT_SUNDAY))
         self.assertEqual(players["a"]["weekly_start_level"], 110)
         self.assertEqual(players["b"]["weekly_start_level"], 300)
         self.assertEqual([e.gained for e in await service.ranking(GUILD_ID)], [0, 0])
@@ -53,15 +58,18 @@ class EmpleadoServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_cerrar_semana_no_afecta_a_otros_servidores(self):
         other = {"z": player("Zoe", 200, 150)}
         service = make_service({"a": player("Ana", 110, 100)}, {2: other})
-        await service.close_week(GUILD_ID)
+        await service.close_week(GUILD_ID, SUNDAY_SAVE)
         self.assertEqual(other["z"]["weekly_start_level"], 150)
+        self.assertTrue(await service.week_is_open(2, SUNDAY_SAVE))
         self.assertEqual([e.char for e in await service.ranking(2)], ["Zoe"])
 
     def test_hora_de_server_save(self):
         self.assertTrue(is_server_save(SUNDAY_SAVE))
         self.assertFalse(is_server_save(SUNDAY_LATER))
-        self.assertTrue(is_weekly_reset_day(SUNDAY_SAVE))
-        self.assertFalse(is_weekly_reset_day(MONDAY_SAVE))
+        self.assertTrue(is_week_close_time(SUNDAY_SAVE))
+        self.assertTrue(is_week_close_time(SUNDAY_LATER))
+        self.assertFalse(is_week_close_time(SUNDAY_BEFORE))
+        self.assertFalse(is_week_close_time(MONDAY_SAVE))
 
 
 class PageTests(unittest.IsolatedAsyncioTestCase):
@@ -71,9 +79,9 @@ class PageTests(unittest.IsolatedAsyncioTestCase):
 
         cog = page.WatchedPlayers.__new__(page.WatchedPlayers)  # Sin __init__: no arrancan las tareas
         cog.bot = MagicMock()
-        cog.service = make_service(players, other_guilds, now=lambda: now)
         cog.guilds = FakeGuildRepository(worlds)
-        cog.ranking_messages, cog.winner_messages = {}, {}
+        cog.service = make_service(players, other_guilds, now=lambda: now, guilds=cog.guilds)
+        cog.ranking_messages, cog.winner_messages, cog._warned = {}, {}, set()
         return cog, page
 
     def guild(self, guild_id=GUILD_ID):
@@ -113,6 +121,48 @@ class PageTests(unittest.IsolatedAsyncioTestCase):
             await cog.announce_weekly_winner(self.guild())
         self.assertEqual(players["a"]["weekly_start_level"], 100)
 
+    async def test_si_el_anuncio_falla_la_semana_sigue_abierta_y_se_reintenta(self):
+        players = {"a": player("Ana", 110, 100)}
+        cog, page = self.make_cog(players)
+        channel = MagicMock(send=AsyncMock(side_effect=[RuntimeError("Discord caído"), MagicMock(id=99)]), guild=self.guild())
+        with patch.object(page, "find_channel", return_value=channel):
+            with self.assertRaises(RuntimeError):
+                await cog.announce_weekly_winner(self.guild())
+            self.assertEqual(players["a"]["weekly_start_level"], 100)  # No se perdió la semana
+
+            await cog.announce_weekly_winner(self.guild())
+        self.assertIn("Ana", channel.send.await_args.kwargs["embed"].description)
+        self.assertEqual(players["a"]["weekly_start_level"], 110)
+
+    async def test_sin_permiso_no_reinicia_y_avisa_una_sola_vez(self):
+        players = {"a": player("Ana", 110, 100)}
+        cog, page = self.make_cog(players)
+        forbidden = page.discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "sin permiso")
+        channel = MagicMock(send=AsyncMock(side_effect=forbidden), guild=self.guild())
+        channel.name = "empleado-del-mes"
+        with patch.object(page, "find_channel", return_value=channel), patch.object(page.logger, "warning") as warning:
+            await cog.announce_weekly_winner(self.guild())
+            await cog.announce_weekly_winner(self.guild())
+        self.assertEqual(players["a"]["weekly_start_level"], 100)
+        warning.assert_called_once()
+
+    async def test_se_anuncia_una_sola_vez_aunque_siga_siendo_domingo(self):
+        cog, page = self.make_cog({"a": player("Ana", 110, 100)})
+        channel = MagicMock(send=AsyncMock(return_value=MagicMock(id=99)), guild=self.guild())
+        with patch.object(page, "find_channel", return_value=channel):
+            await cog.announce_weekly_winner(self.guild())
+            await cog.announce_weekly_winner(self.guild())
+        channel.send.assert_awaited_once()
+
+    async def test_sin_niveles_ganados_no_hay_everyone_pero_cierra(self):
+        players = {"a": player("Ana", 100, 100)}
+        cog, page = self.make_cog(players)
+        channel = MagicMock(send=AsyncMock(), guild=self.guild())
+        with patch.object(page, "find_channel", return_value=channel):
+            await cog.announce_weekly_winner(self.guild())
+        channel.send.assert_not_awaited()
+        self.assertFalse(await cog.service.week_is_open(GUILD_ID, SUNDAY_SAVE))
+
     async def test_anuncio_publica_al_ganador_y_guarda_el_mensaje(self):
         players = {"a": player("Ana", 110, 100), "b": player("Beto", 300, 280)}
         cog, page = self.make_cog(players)
@@ -137,13 +187,12 @@ class PageTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Zoe", channels[2].send.await_args.kwargs["embed"].fields[0].value)
         self.assertEqual(cog.ranking_messages, {GUILD_ID: 51, 2: 52})
 
-    async def test_el_loop_solo_cierra_la_semana_el_domingo_en_server_save(self):
-        for now, expected in ((SUNDAY_SAVE, 1), (SUNDAY_LATER, 0), (MONDAY_SAVE, 0)):
+    async def test_el_loop_intenta_cerrar_solo_el_domingo_desde_el_server_save(self):
+        for now, expected in ((SUNDAY_SAVE, 1), (SUNDAY_LATER, 1), (SUNDAY_BEFORE, 0), (MONDAY_SAVE, 0)):
             cog, page = self.make_cog(make_players(1), now=now)
             cog.bot.guilds = [self.guild()]
             cog.announce_weekly_winner = AsyncMock()
-            with patch.object(page.asyncio, "sleep", new=AsyncMock()):
-                await page.WatchedPlayers.check_server_save.coro(cog)
+            await page.WatchedPlayers.check_server_save.coro(cog)
             self.assertEqual(cog.announce_weekly_winner.await_count, expected, now)
 
 

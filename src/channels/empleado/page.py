@@ -1,5 +1,4 @@
 from datetime import time, timedelta, timezone
-import asyncio
 import discord
 from discord.ext import commands, tasks
 
@@ -7,7 +6,7 @@ from src.core.channel_names import CHANNEL_EMPLEADO, CHANNEL_EMPLEADO_ALT, find_
 from src.core.config import logger
 from src.shared.guild_context import for_each_configured_guild, require_world
 from src.shared.task_utils import resilient
-from src.channels.empleado.service import EmpleadoService, is_server_save, is_weekly_reset_day
+from src.channels.empleado.service import EmpleadoService, is_server_save, is_week_close_time
 
 # --- PUBLICACIÓN AUTOMÁTICA DEL RANKING ---
 # Hora de Colombia (UTC-5, sin horario de verano)
@@ -26,6 +25,7 @@ class WatchedPlayers(commands.Cog):
         # Último ranking diario y último anuncio del ganador por servidor (la limpieza los conserva)
         self.ranking_messages = {}
         self.winner_messages = {}
+        self._warned = set()  # Avisos del log ya dados: el cierre se reintenta cada minuto
         self.check_server_save.start()
         self.post_daily_ranking.start()
 
@@ -158,21 +158,39 @@ class WatchedPlayers(commands.Cog):
         if is_server_save(now):
             logger.info("⏰ Hora de Server Save detectada.")
 
-            if is_weekly_reset_day(now):
-                await for_each_configured_guild(self.bot, self.guilds, self.announce_weekly_winner)
-                await asyncio.sleep(60)
+        # Cada minuto durante el domingo: si un servidor no pudo cerrar la semana, se reintenta
+        if is_week_close_time(now):
+            await for_each_configured_guild(self.bot, self.guilds, self.announce_weekly_winner)
+
+    def _warn_once(self, guild, now, text):
+        warning = (guild.id, now.date(), text)
+        if warning not in self._warned:
+            self._warned.add(warning)
+            logger.warning(f"⚠️ {text} ({guild.name}). Se reintentará hasta terminar el domingo.")
 
     async def announce_weekly_winner(self, guild, world=None):
+        """Anuncia al ganador y, solo si se pudo, reinicia la semana. Sin niveles ganados no hay anuncio."""
+        now = self.service.now()
+        if not await self.service.week_is_open(guild.id, now):
+            return
+
         channel = self._get_empleado_channel(guild)
         if not channel:
-            logger.warning(f"⚠️ No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}' en {guild.name}.")
+            self._warn_once(guild, now, f"No se encontró el canal '{CHANNEL_EMPLEADO}' o '{CHANNEL_EMPLEADO_ALT}'")
             return
 
-        ranking = await self.service.close_week(guild.id)
-        if not ranking:
-            return
+        ranking = await self.service.ranking(guild.id)
+        if ranking and ranking[0].gained > 0:
+            try:
+                await self._send_winner(channel, ranking[0])
+            except discord.Forbidden:
+                self._warn_once(guild, now, f"Sin permiso para anunciar al ganador en #{channel.name}")
+                return
 
-        winner_char, winner_owner, max_gained, _ = ranking[0]
+        await self.service.close_week(guild.id, now)
+
+    async def _send_winner(self, channel, winner):
+        winner_char, winner_owner, max_gained, _ = winner
 
         embed = discord.Embed(
             title="👑 ¡EMPLEADO DE LA SEMANA! 👑",
@@ -191,4 +209,4 @@ class WatchedPlayers(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(WatchedPlayers(bot, EmpleadoService(bot.data.players), bot.data.guilds))
+    await bot.add_cog(WatchedPlayers(bot, EmpleadoService(bot.data.players, bot.data.guilds), bot.data.guilds))

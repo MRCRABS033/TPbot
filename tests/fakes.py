@@ -56,6 +56,7 @@ class FakeGuildRepository:
     def __init__(self, worlds=None, team_names=None):
         self._worlds = worlds if worlds is not None else {GUILD_ID: "Quidera"}
         self._team_names = team_names or {}
+        self._weeks_closed = {}
 
     async def world(self, guild_id):
         return self._worlds.get(guild_id)
@@ -65,6 +66,12 @@ class FakeGuildRepository:
 
     async def set_world(self, guild_id, world):
         self._worlds[guild_id] = world
+
+    async def week_closed_on(self, guild_id):
+        return self._weeks_closed.get(guild_id)
+
+    async def set_week_closed_on(self, guild_id, date):
+        self._weeks_closed[guild_id] = date
 
     async def team_name(self, guild_id):
         return self._team_names.get(guild_id)

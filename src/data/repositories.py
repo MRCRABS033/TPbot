@@ -93,6 +93,14 @@ class GuildRepository:
     async def set_world(self, guild_id, world):
         await self._collection.update_one({"guild_id": guild_id}, {"$set": {"world": world}}, upsert=True)
 
+    async def week_closed_on(self, guild_id):
+        """Fecha (AAAA-MM-DD) del último cierre de la semana del empleado del mes, o None."""
+        document = await self._collection.find_one({"guild_id": guild_id})
+        return document.get("week_closed_on") if document else None
+
+    async def set_week_closed_on(self, guild_id, date):
+        await self._collection.update_one({"guild_id": guild_id}, {"$set": {"week_closed_on": date}}, upsert=True)
+
     async def team_name(self, guild_id):
         document = await self._collection.find_one({"guild_id": guild_id})
         return document.get("team_name") if document else None
