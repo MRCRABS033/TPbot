@@ -24,6 +24,7 @@ COMMAND_SECTIONS = {
     ],
     "Bosses": [
         ("!boss", "Muestra el boss boosted de hoy con botones para organizarlo en grupo, ver sus habilidades y su loot."),
+        ("!boosted", "Muestra la criatura boosted de hoy con botones para ver sus habilidades y su loot."),
     ],
     "Bazar": [
         ("!bazaar", "Busca personajes en venta en el Char Bazaar con filtros (vocación, nivel, precio, mundo, PvP)."),

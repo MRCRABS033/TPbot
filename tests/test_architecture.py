@@ -69,7 +69,7 @@ class BotLoadTests(unittest.IsolatedAsyncioTestCase):
 
             online = bot.get_cog("WatchedTracker")
             self.assertTrue(hasattr(online, "watched_embed_message"))
-            self.assertEqual(len(bot.persistent_views), 4)  # Panel, hunteds, bosses y bazaar
+            self.assertEqual(len(bot.persistent_views), 5)  # Panel, hunteds, bosses, criatura boosted y bazaar
 
 
 if __name__ == "__main__":

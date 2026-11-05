@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from PIL import Image
 
-from src.channels.bosses.service import IMAGE_SCALE, LOCAL_TZ, BossService, parse_activity_time, upscale_image
+from src.channels.bosses.service import LOCAL_TZ, BossService, parse_activity_time
+from src.shared.pixel_art import IMAGE_SCALE, upscale_image
 
 BOSS = {"name": "Dragon Lord", "image_url": "http://api/boss.gif"}
 NOW = LOCAL_TZ.localize(datetime(2026, 11, 4, 15, 0))
@@ -77,12 +78,12 @@ class ActivityTimeTests(unittest.TestCase):
 
 class ImageTests(unittest.TestCase):
     def test_png_se_agranda(self):
-        data, filename = upscale_image(png_bytes())
+        data, filename = upscale_image(png_bytes(), "boss")
         self.assertEqual(filename, "boss.png")
         self.assertEqual(Image.open(io.BytesIO(data)).size, (4 * IMAGE_SCALE, 4 * IMAGE_SCALE))
 
     def test_gif_conserva_la_animacion(self):
-        data, filename = upscale_image(gif_bytes())
+        data, filename = upscale_image(gif_bytes(), "boss")
         image = Image.open(io.BytesIO(data))
         self.assertEqual(filename, "boss.gif")
         self.assertEqual(image.n_frames, 2)

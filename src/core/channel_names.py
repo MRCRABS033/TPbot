@@ -28,6 +28,9 @@ CHANNEL_HUNTEDS = "hunteds"
 # Boss boosted del día con el botón para organizar una actividad en grupo (channels/bosses)
 CHANNEL_BOSSES = "bosses"
 
+# Criatura boosted del día con su información (channels/boosted)
+CHANNEL_BOOSTED_CREATURE = "boosted-creature"
+
 # Anuncios de las actividades en grupo creadas desde #bosses
 CHANNEL_ANUNCIOS = "anuncios"
 

@@ -1,8 +1,8 @@
 """
-Información de bosses desde TibiaWiki (en inglés). La lectura del wikitext está en
+Información de bosses y criaturas desde TibiaWiki (en inglés). La lectura del wikitext está en
 wikitext.py y las traducciones de términos en src/core/constants/tibia.py.
 
-fetch_boss_info(session, nombre) devuelve un dict con:
+fetch_creature_info(session, nombre) devuelve un dict con:
   hp, exp, bosstiaryclass, cooldown, location, notes   (texto listo para Discord)
   abilities      lista de habilidades ("Ice Wave: 1200+ hielo")
   max_damage     daño máximo ("2.265 (1.000 físico, 1.265 muerte)")
@@ -16,7 +16,7 @@ from src.core.config import logger
 from src.core.constants.tibia import DAMAGE_MODS, ELEMENTS, NO_RARITY, RARITIES
 from src.api.fandom import fetch_wikitext
 from src.api.tibiawiki import wiki_file_names_for
-from src.channels.bosses.wikitext import clean_wikitext, find_template, parse_fields, parse_template, split_params
+from src.shared.wikitext import clean_wikitext, find_template, parse_fields, parse_template, split_params
 
 _cache = {}  # { nombre: dict | None }
 
@@ -173,21 +173,21 @@ def parse_infobox(wikitext):
     return info
 
 
-async def fetch_boss_info(session, boss_name):
-    """Información del boss (ver docstring del módulo). None si no se encuentra. Se guarda en memoria."""
-    if boss_name in _cache:
-        return _cache[boss_name]
+async def fetch_creature_info(session, name):
+    """Información del boss o criatura (ver docstring del módulo). None si no se encuentra. Se guarda en memoria."""
+    if name in _cache:
+        return _cache[name]
 
-    for page in dict.fromkeys(n[:-4] for n in wiki_file_names_for(boss_name)):
+    for page in dict.fromkeys(n[:-4] for n in wiki_file_names_for(name)):
         try:
             wikitext = await fetch_wikitext(session, page)
         except Exception as e:
-            logger.warning(f"⚠️ Error al consultar TibiaWiki para {boss_name}: {e}")
+            logger.warning(f"⚠️ Error al consultar TibiaWiki para {name}: {e}")
             return None  # No se cachea: se reintenta la próxima vez
         info = parse_infobox(wikitext) if wikitext else None
         if info is not None:
-            _cache[boss_name] = info
+            _cache[name] = info
             return info
 
-    _cache[boss_name] = None
+    _cache[name] = None
     return None

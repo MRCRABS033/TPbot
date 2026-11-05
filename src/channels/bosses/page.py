@@ -11,7 +11,6 @@ import discord
 from discord.ext import commands, tasks
 
 from src.api import tibiadata, tibiawiki
-from src.channels.bosses.boss_info import fetch_boss_info
 from src.channels.bosses.embeds import (
     CARD_MARKER,
     _send_kwargs,
@@ -24,6 +23,7 @@ from src.channels.bosses.embeds import (
 from src.channels.bosses.service import BossService
 from src.core.channel_names import CHANNEL_ANUNCIOS, CHANNEL_BOSSES, find_channel
 from src.core.config import WATCHED_PLAYERS, logger
+from src.shared.creature_info import fetch_creature_info
 from src.shared.discord_utils import _get_previous_message
 from src.shared.panel_ui import MAX_SELECT_OPTIONS
 from src.shared.task_utils import resilient
@@ -242,5 +242,5 @@ class BossTracker(commands.Cog):
 
 
 async def setup(bot):
-    service = BossService(tibiadata, tibiawiki, fetch_boss_info, WATCHED_PLAYERS)
+    service = BossService(tibiadata, tibiawiki, fetch_creature_info, WATCHED_PLAYERS)
     await bot.add_cog(BossTracker(bot, service))

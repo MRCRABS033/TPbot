@@ -1,40 +1,19 @@
 """#bosses: boss boosted del día, su imagen e información, y la hora de las actividades. No sabe nada de Discord."""
-import io
 import logging
 import re
 from contextlib import aclosing
 from datetime import datetime, timedelta
 
 import pytz
-from PIL import Image, ImageSequence
 
 from src.api.http import create_session
+from src.shared.pixel_art import upscale_image
 
 logger = logging.getLogger("TibiaBot")
 
 # La hora que se escribe al crear la actividad se interpreta en hora de México (Ciudad de México).
 # Discord no informa la zona horaria de cada usuario; en el anuncio cada quien la ve en su hora local.
 LOCAL_TZ = pytz.timezone("America/Mexico_City")
-# La imagen del boss (64x64) se agranda sin suavizar para que se vea nítida
-IMAGE_SCALE = 3
-
-
-def upscale_image(data):
-    """Agranda la imagen sin suavizar (pixel art nítido). Mantiene la animación si la tiene."""
-    image = Image.open(io.BytesIO(data))
-    out = io.BytesIO()
-    if getattr(image, "n_frames", 1) > 1:
-        frames, durations = [], []
-        for frame in ImageSequence.Iterator(image):
-            rgba = frame.convert("RGBA")
-            frames.append(rgba.resize((rgba.width * IMAGE_SCALE, rgba.height * IMAGE_SCALE), Image.NEAREST))
-            durations.append(frame.info.get("duration", 100))
-        frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:],
-                       duration=durations, loop=0, disposal=2)
-        return out.getvalue(), "boss.gif"
-    rgba = image.convert("RGBA")
-    rgba.resize((rgba.width * IMAGE_SCALE, rgba.height * IMAGE_SCALE), Image.NEAREST).save(out, format="PNG")
-    return out.getvalue(), "boss.png"
 
 
 def parse_activity_time(text, now=None):
@@ -103,7 +82,7 @@ class BossService:
         async with aclosing(self._wiki.iter_boss_images(boss["name"], boss.get("image_url"))) as images:
             async for data in images:
                 try:
-                    return upscale_image(data)
+                    return upscale_image(data, "boss")
                 except Exception as e:
                     logger.warning(f"⚠️ No se pudo usar una imagen de {boss['name']}: {e}")
         logger.warning(f"⚠️ No se pudo descargar la imagen de {boss['name']}; Discord la cargará desde la API")
