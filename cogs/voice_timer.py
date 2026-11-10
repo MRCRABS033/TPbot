@@ -160,16 +160,24 @@ class VoiceTimer(commands.Cog):
             return
 
         channel = voice_state.channel
+        perms = channel.permissions_for(ctx.guild.me)
+        if not perms.connect or not perms.speak:
+            await ctx.send(f"🔇 No tengo permiso para **Conectar** y **Hablar** en **{channel.name}**. Pide a un admin que me lo dé.")
+            return
+
         try:
             vc = ctx.guild.voice_client
             if vc and vc.is_connected():
                 await vc.move_to(channel)
             else:
-                vc = await channel.connect(self_deaf=True)
+                vc = await channel.connect()
         except Exception as e:
             logger.error(f"❌ No se pudo conectar al canal de voz {channel}: {e}")
             await ctx.send(f"❌ No pude entrar a **{channel.name}**. Revisa que tenga permisos para conectarme y hablar.")
             return
+
+        if ctx.guild.me.voice and ctx.guild.me.voice.mute:
+            await ctx.send("⚠️ Estoy **silenciado por el servidor** en este canal, así que nadie me va a escuchar. Un admin debe quitarme el silencio (clic derecho sobre mí → desactivar *Silenciar del servidor*).")
 
         # Pitido corto de confirmación para saber que el audio funciona
         await self._play_beep(vc)
