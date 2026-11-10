@@ -22,6 +22,7 @@ INITIAL_EXTENSIONS = [
     "cogs.panel",
     "cogs.cleanup",
     "cogs.backup",
+    "cogs.voice_timer",
     "cogs.commands.add",
     "cogs.commands.remove",
     "cogs.commands.list_players",

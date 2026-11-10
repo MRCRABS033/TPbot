@@ -25,6 +25,10 @@ COMMAND_SECTIONS = {
     "Bosses": [
         ("!boss", "Muestra el boss boosted de hoy con botones para organizarlo en grupo, ver sus habilidades y su loot."),
     ],
+    "Temporizador": [
+        ("!timer [intervalo]", "Entra a tu canal de voz y suena cada cierto tiempo (ej: `!timer 5m`). Sin intervalo te lo pregunta."),
+        ("!timer stop", "Detiene el temporizador. También se detiene solo si todos salen del canal."),
+    ],
     "Bazar": [
         ("!bazaar", "Busca personajes en venta en el Char Bazaar con filtros (vocación, nivel, precio, mundo, PvP)."),
         ("!ver <código>", "Muestra la ficha completa de un personaje de la última búsqueda del canal."),
