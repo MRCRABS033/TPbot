@@ -103,11 +103,25 @@ class VoiceTimer(commands.Cog):
         return reply.content
 
     async def _play_beep(self, vc):
+        """Reproduce el pitido. Devuelve None si salió bien o el texto del error."""
         if not vc.is_connected():
-            return
+            return "el bot no está conectado al canal de voz"
         if vc.is_playing():
             vc.stop()
-        vc.play(discord.PCMAudio(io.BytesIO(BEEP_PCM)))
+
+        def after(error):
+            if error:
+                logger.error(f"❌ Error reproduciendo el pitido en {vc.channel}: {error!r}")
+
+        try:
+            vc.play(discord.PCMAudio(io.BytesIO(BEEP_PCM)), after=after)
+        except discord.opus.OpusNotLoaded:
+            logger.error("❌ No se pudo cargar libopus: instala el paquete libopus0 en el servidor")
+            return "falta la librería de audio **libopus** en el servidor donde corre el bot"
+        except Exception as e:
+            logger.error(f"❌ Error reproduciendo el pitido en {vc.channel}: {e!r}")
+            return f"`{e!r}`"
+        return None
 
     async def _run(self, guild_id, vc, interval):
         rounds = 0
@@ -190,8 +204,14 @@ class VoiceTimer(commands.Cog):
         if ctx.guild.me.voice and ctx.guild.me.voice.mute:
             await ctx.send("⚠️ Estoy **silenciado por el servidor** en este canal, así que nadie me va a escuchar. Un admin debe quitarme el silencio (clic derecho sobre mí → desactivar *Silenciar del servidor*).")
 
-        # Pitido corto de confirmación para saber que el audio funciona
-        await self._play_beep(vc)
+        # Pitido de confirmación. Se espera un momento para que termine la conexión de voz
+        # (cifrado incluido); si suena apenas conecta, Discord puede descartar el audio.
+        await asyncio.sleep(1.5)
+        error = await self._play_beep(vc)
+        if error:
+            await ctx.send(f"❌ Entré al canal pero no puedo reproducir sonido: {error}.")
+            await vc.disconnect()
+            return
 
         self.timers[ctx.guild.id] = asyncio.create_task(self._run(ctx.guild.id, vc, seconds))
 
