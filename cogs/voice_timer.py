@@ -137,8 +137,17 @@ class VoiceTimer(commands.Cog):
             pass
         finally:
             self.timers.pop(guild_id, None)
-            if vc.is_connected():
-                await vc.disconnect()
+            # Siempre se desconecta (aunque ya no esté conectado) para que discord.py
+            # libere la conexión y el próximo !timer pueda entrar sin problema.
+            await self._force_disconnect(vc)
+
+    async def _force_disconnect(self, vc):
+        if not vc:
+            return
+        try:
+            await vc.disconnect(force=True)
+        except Exception as e:
+            logger.warning(f"⚠️ Error al desconectar de voz: {e!r}")
 
     async def stop_timer(self, guild_id):
         task = self.timers.pop(guild_id, None)
@@ -190,15 +199,32 @@ class VoiceTimer(commands.Cog):
             await ctx.send(f"🔇 No tengo permiso para **Conectar** y **Hablar** en **{channel.name}**. Pide a un admin que me lo dé.")
             return
 
+        vc = ctx.guild.voice_client
+        if vc and not vc.is_connected():
+            # Conexión "fantasma": pasa cuando expulsan al bot del canal y discord.py no la limpia.
+            # Si no se descarta, connect() falla con "Already connected to a voice channel".
+            logger.info(f"🧹 Limpiando conexión de voz caída en {ctx.guild.name}")
+            await self._force_disconnect(vc)
+            vc = None
+
         try:
-            vc = ctx.guild.voice_client
-            if vc and vc.is_connected():
+            if vc:
                 await vc.move_to(channel)
             else:
-                vc = await channel.connect()
+                vc = await channel.connect(timeout=20)
+        except discord.Forbidden:
+            logger.error(f"❌ Sin permisos para entrar al canal de voz {channel}")
+            await ctx.send(f"🔇 Discord no me deja entrar a **{channel.name}**. Revisa mis permisos de **Ver canal**, **Conectar** y **Hablar**.")
+            return
+        except asyncio.TimeoutError:
+            logger.error(f"❌ Tiempo agotado conectando al canal de voz {channel}")
+            await self._force_disconnect(ctx.guild.voice_client)
+            await ctx.send(f"⌛ No pude terminar de conectarme a **{channel.name}** (tiempo agotado). Intenta de nuevo en unos segundos.")
+            return
         except Exception as e:
-            logger.error(f"❌ No se pudo conectar al canal de voz {channel}: {e}")
-            await ctx.send(f"❌ No pude entrar a **{channel.name}**. Revisa que tenga permisos para conectarme y hablar.")
+            logger.error(f"❌ No se pudo conectar al canal de voz {channel}: {e!r}")
+            await self._force_disconnect(ctx.guild.voice_client)
+            await ctx.send(f"❌ No pude entrar a **{channel.name}**: `{e}`. Intenta de nuevo; si sigue pasando, revisa mis permisos.")
             return
 
         if ctx.guild.me.voice and ctx.guild.me.voice.mute:
@@ -225,6 +251,15 @@ class VoiceTimer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        # Si sacaron al bot del canal de voz, se detiene el temporizador y se libera la conexión
+        if member.id == self.bot.user.id and before.channel and after.channel is None:
+            if member.guild.id in self.timers:
+                logger.info(f"⏱️ Sacaron al bot de {before.channel}, deteniendo temporizador")
+                await self.stop_timer(member.guild.id)
+            else:
+                await self._force_disconnect(member.guild.voice_client)
+            return
+
         # Si el bot queda solo en el canal, se detiene el temporizador
         vc = member.guild.voice_client
         if not vc or member.guild.id not in self.timers or before.channel != vc.channel:
