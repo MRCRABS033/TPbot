@@ -28,7 +28,7 @@ COMMAND_SECTIONS = {
     "Temporizador": [
         ("!timer [intervalo]", "Entra a tu canal de voz y suena cada cierto tiempo (ej: `!timer 5m`). Sin intervalo te lo pregunta."),
         ("!timer stop", "Detiene el temporizador. También se detiene solo si todos salen del canal."),
-        ("!bosstimer", "Temporizador de boss con formulario para llenar los tiempos. Atajo: `!bosstimer 20m 2m 15s` (total, cada cuánto, duración de la mecánica). Una voz avisa \"¡Mecánica!\", cuenta 5…1 al final de cada mecánica y se detiene sola al llegar al total."),
+        ("!bosstimer", "Temporizador de boss con formulario para llenar los tiempos. Atajo: `!bosstimer 20m 1m30s 1m10s 15s` (total, primera ronda, siguientes rondas, duración de la mecánica). Una voz cuenta 10…1 antes de \"¡Mecánica!\", cuenta 5…1 al final de la mecánica y se detiene sola al llegar al total."),
         ("!bosstimer stop", "Detiene el temporizador de boss (también sirve el botón **Detener**)."),
     ],
     "Bazar": [

@@ -1,4 +1,4 @@
-# Genera las voces del temporizador de boss (assets/sounds/*.wav) con la voz "Sabina" de Windows.
+﻿# Genera las voces del temporizador de boss (assets/sounds/*.wav) con la voz "Sabina" de Windows.
 # Uso (desde la raíz del proyecto):  powershell -ExecutionPolicy Bypass -File scripts\generar_voces.ps1
 # Formato: WAV 48 kHz, 16 bits, estéreo (el que usa discord.py, así el bot no necesita FFmpeg).
 # El bot recorta el silencio de los bordes y sube el volumen al cargarlas.
@@ -12,6 +12,11 @@ $voz = "Microsoft Sabina Desktop"   # es-MX; ver otras con (New-Object System.Sp
 $velocidad = 1                      # -10 (lento) a 10 (rápido); los números deben durar menos de 1 s
 
 $frases = [ordered]@{
+    "10"           = "Diez"
+    "9"            = "Nueve"
+    "8"            = "Ocho"
+    "7"            = "Siete"
+    "6"            = "Seis"
     "5"            = "Cinco"
     "4"            = "Cuatro"
     "3"            = "Tres"

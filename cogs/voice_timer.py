@@ -21,7 +21,8 @@ MAX_INTERVAL = 6 * 3600   # 6 horas
 BOSS_MIN_INTERVAL = 10
 BOSS_MIN_PAUSE = 2        # la voz "¡mecánica!" dura ~1 s, no debe cortarse
 BOSS_MAX_PAUSE = 10 * 60
-COUNTDOWN = 5             # segundos de cuenta regresiva al final de cada mecánica
+PRE_COUNTDOWN = 10        # cuenta "diez… uno" antes de cada mecánica
+COUNTDOWN = 5             # cuenta "cinco… uno" al final de cada mecánica
 
 _DURATION_RE = re.compile(r"(\d+)\s*([hms]?)", re.IGNORECASE)
 _UNIT_SECONDS = {"h": 3600, "m": 60, "s": 1, "": 60}  # número solo = minutos
@@ -103,20 +104,28 @@ def _load_voice(name, fallback):
 
 
 _TONE = _build_sound([(1200, 150)])
-COUNT_VOICES = {n: _load_voice(str(n), _TONE) for n in range(1, COUNTDOWN + 1)}  # "cinco"… "uno"
+COUNT_VOICES = {n: _load_voice(str(n), _TONE)                # "diez"… "uno"
+                for n in range(1, max(PRE_COUNTDOWN, COUNTDOWN) + 1)}
 MECHANIC_VOICE = _load_voice("mecanica", BEEP_PCM)          # "¡Mecánica!"
 RESUME_VOICE = _load_voice("fin_mecanica", _TONE)           # "Fin de la mecánica"
 END_VOICE = _load_voice("fin", BEEP_PCM)                    # "Tiempo terminado"
 
 
-def boss_schedule(total, interval, pause):
-    """Lista de (segundo, sonido) desde el inicio. Cada ciclo: espera `interval` en silencio,
-    "¡mecánica!" al empezar la mecánica, cuenta "cinco… uno" en sus últimos segundos y
-    "fin de la mecánica" al terminarla. Al llegar al total: "tiempo terminado"."""
+def boss_schedule(total, first, interval, pause):
+    """Lista de (segundo, sonido) desde el inicio. La primera ronda espera `first` y las siguientes
+    `interval`. Cada ronda: cuenta "diez… uno", "¡mecánica!", cuenta "cinco… uno" al final de la
+    mecánica y "fin de la mecánica". Al llegar al total: "tiempo terminado"."""
     events = []
     cycle_start = 0
+    wait = first
     while True:
-        mechanic = cycle_start + interval
+        mechanic = cycle_start + wait
+        # Tras "fin de la mecánica" (~1 s) se deja un respiro antes de empezar a contar
+        earliest = cycle_start + 2 if cycle_start else 1
+        for n in range(PRE_COUNTDOWN, 0, -1):
+            t = mechanic - n
+            if earliest <= t < total:
+                events.append((t, COUNT_VOICES[n]))
         if mechanic >= total:
             break
         events.append((mechanic, MECHANIC_VOICE))
@@ -130,6 +139,7 @@ def boss_schedule(total, interval, pause):
             break
         events.append((resume, RESUME_VOICE))
         cycle_start = resume
+        wait = interval
     events.append((total, END_VOICE))
     return events
 
@@ -149,10 +159,13 @@ class StopTimerView(discord.ui.View):
 
 
 class BossTimerModal(discord.ui.Modal, title="⚔️ Temporizador de boss"):
-    """Formulario con los tres tiempos del boss. Cada campo acepta `20m`, `15s`, `1m 30s` o solo `5` (minutos)."""
+    """Formulario con los tiempos del boss. Cada campo acepta `20m`, `15s`, `1m 30s` o solo `5` (minutos)."""
 
     total = discord.ui.TextInput(label="⏳ Duración total", placeholder="ej: 20m", default="20m", max_length=12)
-    interval = discord.ui.TextInput(label="🔁 Cada cuánto viene la mecánica", placeholder="ej: 2m", default="2m", max_length=12)
+    first = discord.ui.TextInput(label="1️⃣ Primera ronda: cuánto falta para la mecánica", placeholder="ej: 1m30s",
+                                 default="1m30s", max_length=12)
+    interval = discord.ui.TextInput(label="🔁 Siguientes rondas (opcional)", placeholder="ej: 1m10s · vacío = igual que la primera",
+                                    default="1m10s", required=False, max_length=12)
     pause = discord.ui.TextInput(label="⚔️ Cuánto dura la mecánica", placeholder="ej: 15s", default="15s", max_length=12)
 
     def __init__(self, cog):
@@ -160,7 +173,9 @@ class BossTimerModal(discord.ui.Modal, title="⚔️ Temporizador de boss"):
         self.cog = cog
 
     async def on_submit(self, interaction):
-        values = [parse_duration(f.value) for f in (self.total, self.interval, self.pause)]
+        total, first, pause = (parse_duration(f.value) for f in (self.total, self.first, self.pause))
+        interval = parse_duration(self.interval.value) if self.interval.value.strip() else first
+        values = [total, first, interval, pause]
         if None in values:
             await interaction.response.send_message(
                 "❌ No entendí algún tiempo. Usa algo como `20m`, `2m`, `15s` o `1m 30s`.", ephemeral=True)
@@ -185,19 +200,20 @@ class BossSetupView(discord.ui.View):
 def boss_setup_embed():
     embed = discord.Embed(
         title="⚔️ Temporizador de boss",
-        description="Toca **Configurar y empezar** y llena los tres tiempos. Tienes que estar en un canal de voz.",
+        description="Toca **Configurar y empezar** y llena los tiempos. Tienes que estar en un canal de voz.",
         color=discord.Color.red(),
     )
     embed.add_field(name="⏳ Duración total", value="Cuánto dura todo.\nEj: `20m`", inline=True)
-    embed.add_field(name="🔁 Cada cuánto", value="Cada cuánto viene la mecánica.\nEj: `2m`", inline=True)
+    embed.add_field(name="1️⃣ Primera ronda", value="Cuánto falta para la primera mecánica.\nEj: `1m30s`", inline=True)
+    embed.add_field(name="🔁 Siguientes rondas", value="Espera entre mecánicas después de la primera.\nEj: `1m10s`", inline=True)
     embed.add_field(name="⚔️ Mecánica", value="Cuánto dura la mecánica.\nEj: `15s`", inline=True)
     embed.add_field(
         name="🔊 Qué vas a escuchar",
-        value="Una voz dice **\"¡Mecánica!\"** cuando empieza, cuenta **5, 4, 3, 2, 1** al final de la mecánica "
+        value="Una voz cuenta **10… 1** y dice **\"¡Mecánica!\"**; al final de la mecánica cuenta **5… 1** "
               "y dice **\"Fin de la mecánica\"**. Al llegar al total dice **\"Tiempo terminado\"**.",
         inline=False,
     )
-    embed.set_footer(text="Atajo sin formulario: !bosstimer 20m 2m 15s")
+    embed.set_footer(text="Atajo sin formulario: !bosstimer 20m 1m30s 1m10s 15s  (total, primera, siguientes, mecánica)")
     return embed
 
 
@@ -365,15 +381,16 @@ class VoiceTimer(commands.Cog):
             return None
         return vc
 
-    async def start_boss(self, guild, member, send, total, interval, pause):
+    async def start_boss(self, guild, member, send, total, first, interval, pause):
         """Valida los tiempos, entra a voz y arranca el temporizador de boss. Lo usan el comando y el formulario."""
         error = self._check_can_start(guild, member)
-        if not error and not BOSS_MIN_INTERVAL <= interval <= MAX_INTERVAL:
-            error = f"❌ El intervalo entre mecánicas debe estar entre {format_duration(BOSS_MIN_INTERVAL)} y {format_duration(MAX_INTERVAL)}."
+        for name, value in (("de la primera ronda", first), ("de las siguientes rondas", interval)):
+            if not error and not BOSS_MIN_INTERVAL <= value <= MAX_INTERVAL:
+                error = f"❌ El tiempo {name} debe estar entre {format_duration(BOSS_MIN_INTERVAL)} y {format_duration(MAX_INTERVAL)}."
         if not error and not BOSS_MIN_PAUSE <= pause <= BOSS_MAX_PAUSE:
             error = f"❌ La mecánica debe durar entre {format_duration(BOSS_MIN_PAUSE)} y {format_duration(BOSS_MAX_PAUSE)}."
-        if not error and not interval < total <= MAX_INTERVAL:
-            error = f"❌ La duración total debe ser mayor que el intervalo y como máximo {format_duration(MAX_INTERVAL)}."
+        if not error and not first < total <= MAX_INTERVAL:
+            error = f"❌ La duración total debe ser mayor que la primera ronda y como máximo {format_duration(MAX_INTERVAL)}."
         if error:
             await send(error)
             return
@@ -382,18 +399,22 @@ class VoiceTimer(commands.Cog):
         if not vc:
             return
 
-        events = boss_schedule(total, interval, pause)
+        events = boss_schedule(total, first, interval, pause)
         mechanics = sum(1 for _, sound in events if sound is MECHANIC_VOICE)
         end_ts = int(time.time() + total)
         self.timers[guild.id] = asyncio.create_task(self._run_boss(guild.id, vc, events))
-        logger.info(f"⚔️ Temporizador de boss iniciado por {member} en {vc.channel}: "
-                    f"total {format_duration(total)}, cada {format_duration(interval)}, mecánica {format_duration(pause)}")
+        logger.info(f"⚔️ Temporizador de boss iniciado por {member} en {vc.channel}: total {format_duration(total)}, "
+                    f"primera {format_duration(first)}, siguientes {format_duration(interval)}, mecánica {format_duration(pause)}")
 
+        if first == interval:
+            wait_text = f"Cada **{format_duration(interval)}**"
+        else:
+            wait_text = f"Primera mecánica a los **{format_duration(first)}**, después cada **{format_duration(interval)}**"
         embed = discord.Embed(
             title="⚔️ Temporizador de boss activo",
             description=(
                 f"Canal: **{vc.channel.name}**\n"
-                f"Cada **{format_duration(interval)}** → la voz dice **\"¡Mecánica!\"**\n"
+                f"{wait_text} → cuenta **10…1** y dice **\"¡Mecánica!\"**\n"
                 f"La mecánica dura **{format_duration(pause)}** → cuenta **5…1** y dice **\"Fin de la mecánica\"**\n"
                 f"Total: **{format_duration(total)}** ({mechanics} mecánicas) · termina <t:{end_ts}:t> (<t:{end_ts}:R>)"
             ),
@@ -466,9 +487,14 @@ class VoiceTimer(commands.Cog):
 
         parts = tiempos.replace(",", " ").split()
         values = [parse_duration(p) for p in parts]
-        if len(values) != 3 or None in values:
-            await ctx.send("❌ Necesito 3 tiempos separados por espacio: total, intervalo y mecánica. Ej: `!bosstimer 20m 2m 15s` (usa `1m30s` todo junto, sin espacio). O escribe solo `!bosstimer` para usar el formulario.")
+        if len(values) not in (3, 4) or None in values:
+            await ctx.send("❌ Escribe los tiempos separados por espacio (usa `1m30s` todo junto, sin espacio):\n"
+                           "• `!bosstimer 20m 1m30s 1m10s 15s` → total, primera ronda, siguientes rondas, mecánica\n"
+                           "• `!bosstimer 20m 2m 15s` → si todas las rondas duran lo mismo\n"
+                           "O escribe solo `!bosstimer` para usar el formulario.")
             return
+        if len(values) == 3:  # total, ronda, mecánica: todas las rondas iguales
+            values.insert(2, values[1])
         await self.start_boss(ctx.guild, ctx.author, ctx.send, *values)
 
     @commands.Cog.listener()
