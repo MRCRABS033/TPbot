@@ -23,6 +23,7 @@ INITIAL_EXTENSIONS = [
     "src.channels.boosted.page",
     "src.channels.bazaar.page",
     "src.channels.tpbot.page",
+    "src.voice.page",
     "src.admin.config",
     "src.admin.cleanup",
     "src.admin.backup",
