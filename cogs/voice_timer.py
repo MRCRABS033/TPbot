@@ -186,14 +186,16 @@ class BossTimerModal(discord.ui.Modal, title="⚔️ Temporizador de boss"):
 
 
 class BossSetupView(discord.ui.View):
-    """Botón que abre el formulario (los formularios solo se pueden abrir desde un botón o un comando /)."""
+    """Botón que abre el formulario (los formularios solo se pueden abrir desde un botón o un comando /).
+    Persistente (custom_id fijo, sin timeout) para que siga funcionando aunque pase el tiempo o se reinicie el bot."""
 
     def __init__(self, cog):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)
         self.cog = cog
 
-    @discord.ui.button(label="Configurar y empezar", style=discord.ButtonStyle.primary, emoji="⚙️")
+    @discord.ui.button(label="Configurar y empezar", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id="voice_timer:boss_setup")
     async def configure(self, interaction, button):
+        logger.info(f"⚙️ {interaction.user} abrió el formulario del temporizador de boss")
         await interaction.response.send_modal(BossTimerModal(self.cog))
 
 
@@ -224,6 +226,7 @@ class VoiceTimer(commands.Cog):
 
     async def cog_load(self):
         self.bot.add_view(StopTimerView(self))
+        self.bot.add_view(BossSetupView(self))
 
     async def cog_unload(self):
         for guild_id in list(self.timers):
