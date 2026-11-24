@@ -162,7 +162,8 @@ class BossTimerModal(discord.ui.Modal, title="⚔️ Temporizador de boss"):
     """Formulario con los tiempos del boss. Cada campo acepta `20m`, `15s`, `1m 30s` o solo `5` (minutos)."""
 
     total = discord.ui.TextInput(label="⏳ Duración total", placeholder="ej: 20m", default="20m", max_length=12)
-    first = discord.ui.TextInput(label="1️⃣ Primera ronda: cuánto falta para la mecánica", placeholder="ej: 1m30s",
+    # Ojo: Discord rechaza el formulario entero si un label pasa de 45 caracteres (los emojis cuentan varios)
+    first = discord.ui.TextInput(label="1️⃣ Primera ronda (hasta la 1ª mecánica)", placeholder="ej: 1m30s",
                                  default="1m30s", max_length=12)
     interval = discord.ui.TextInput(label="🔁 Siguientes rondas (opcional)", placeholder="ej: 1m10s · vacío = igual que la primera",
                                     default="1m10s", required=False, max_length=12)
