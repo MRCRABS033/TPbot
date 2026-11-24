@@ -285,19 +285,23 @@ class VoiceTimer(commands.Cog):
             # libere la conexión y el próximo !timer pueda entrar sin problema.
             await self._force_disconnect(vc)
 
-    async def _run_boss(self, guild_id, vc, events):
+    async def _run_boss(self, guild_id, vc, events, start):
+        """`start` es loop.time() del momento en que se pidió el temporizador (no de cuando terminó de
+        entrar a voz), así el tiempo que tarda en conectarse no corre el horario."""
         loop = asyncio.get_running_loop()
-        start = loop.time()  # se mide contra el inicio para que los ciclos no se vayan atrasando
         try:
             for at, sound in events:
                 delay = start + at - loop.time()
                 if delay > 0:
                     await asyncio.sleep(delay)
+                elif delay < -0.5:
+                    continue  # ya pasó mientras entraba al canal (p. ej. el "diez" de una primera ronda corta)
                 if not vc.is_connected():
                     break
                 await self._play_beep(vc, sound)
                 if sound is MECHANIC_VOICE:
-                    logger.info(f"⚔️ Mecánica de boss en {vc.channel} (minuto {format_duration(at)})")
+                    lag_ms = (loop.time() - start - at) * 1000
+                    logger.info(f"⚔️ Mecánica de boss en {vc.channel} (minuto {format_duration(at)}, atraso {lag_ms:.0f} ms)")
             else:
                 logger.info(f"🏁 Temporizador de boss terminado en {vc.channel}")
                 await asyncio.sleep(2.5)  # deja terminar el sonido final antes de salir
@@ -387,6 +391,9 @@ class VoiceTimer(commands.Cog):
 
     async def start_boss(self, guild, member, send, total, first, interval, pause):
         """Valida los tiempos, entra a voz y arranca el temporizador de boss. Lo usan el comando y el formulario."""
+        # El reloj arranca YA (cuando la persona da Enviar), no cuando el bot termina de entrar al canal
+        start = asyncio.get_running_loop().time()
+        start_wall = time.time()
         error = self._check_can_start(guild, member)
         for name, value in (("de la primera ronda", first), ("de las siguientes rondas", interval)):
             if not error and not BOSS_MIN_INTERVAL <= value <= MAX_INTERVAL:
@@ -408,10 +415,11 @@ class VoiceTimer(commands.Cog):
 
         events = boss_schedule(total, first, interval, pause)
         mechanics = sum(1 for _, sound in events if sound is MECHANIC_VOICE)
-        end_ts = int(time.time() + total)
-        self.timers[guild.id] = asyncio.create_task(self._run_boss(guild.id, vc, events))
+        end_ts = int(start_wall + total)
+        self.timers[guild.id] = asyncio.create_task(self._run_boss(guild.id, vc, events, start))
         logger.info(f"⚔️ Temporizador de boss iniciado por {member} en {vc.channel}: total {format_duration(total)}, "
-                    f"primera {format_duration(first)}, siguientes {format_duration(interval)}, mecánica {format_duration(pause)}")
+                    f"primera {format_duration(first)}, siguientes {format_duration(interval)}, mecánica {format_duration(pause)} "
+                    f"(tardó {time.time() - start_wall:.1f}s en entrar al canal; ya descontado)")
 
         if first == interval:
             wait_text = f"Cada **{format_duration(interval)}**"
