@@ -112,16 +112,16 @@ END_VOICE = _load_voice("fin", BEEP_PCM)                    # "Tiempo terminado"
 
 
 def boss_schedule(total, first, interval, pause):
-    """Lista de (segundo, sonido) desde el inicio. La primera ronda espera `first` y las siguientes
-    `interval`. Cada ronda: cuenta "diez… uno", "¡mecánica!", cuenta "cinco… uno" al final de la
-    mecánica y "fin de la mecánica". Al llegar al total: "tiempo terminado"."""
+    """Lista de (segundo, sonido) desde el inicio. La primera mecánica empieza en `first` y las
+    siguientes cada `interval` contado de INICIO a INICIO de mecánica (como el juego), así la
+    duración de la mecánica no corre el horario. Cada ronda: cuenta "diez… uno", "¡mecánica!",
+    cuenta "cinco… uno" al final de la mecánica y "fin de la mecánica". Al llegar al total: "tiempo terminado"."""
     events = []
-    cycle_start = 0
-    wait = first
+    mechanic = first
+    last_resume = None
     while True:
-        mechanic = cycle_start + wait
         # Tras "fin de la mecánica" (~1 s) se deja un respiro antes de empezar a contar
-        earliest = cycle_start + 2 if cycle_start else 1
+        earliest = last_resume + 2 if last_resume is not None else 1
         for n in range(PRE_COUNTDOWN, 0, -1):
             t = mechanic - n
             if earliest <= t < total:
@@ -138,8 +138,8 @@ def boss_schedule(total, first, interval, pause):
         if resume >= total:
             break
         events.append((resume, RESUME_VOICE))
-        cycle_start = resume
-        wait = interval
+        last_resume = resume
+        mechanic += interval
     events.append((total, END_VOICE))
     return events
 
@@ -208,7 +208,7 @@ def boss_setup_embed():
     )
     embed.add_field(name="⏳ Duración total", value="Cuánto dura todo.\nEj: `20m`", inline=True)
     embed.add_field(name="1️⃣ Primera ronda", value="Cuánto falta para la primera mecánica.\nEj: `1m30s`", inline=True)
-    embed.add_field(name="🔁 Siguientes rondas", value="Espera entre mecánicas después de la primera.\nEj: `1m10s`", inline=True)
+    embed.add_field(name="🔁 Siguientes rondas", value="De una mecánica a la siguiente, contado desde que empieza cada una.\nEj: `1m10s`", inline=True)
     embed.add_field(name="⚔️ Mecánica", value="Cuánto dura la mecánica.\nEj: `15s`", inline=True)
     embed.add_field(
         name="🔊 Qué vas a escuchar",
@@ -393,6 +393,9 @@ class VoiceTimer(commands.Cog):
                 error = f"❌ El tiempo {name} debe estar entre {format_duration(BOSS_MIN_INTERVAL)} y {format_duration(MAX_INTERVAL)}."
         if not error and not BOSS_MIN_PAUSE <= pause <= BOSS_MAX_PAUSE:
             error = f"❌ La mecánica debe durar entre {format_duration(BOSS_MIN_PAUSE)} y {format_duration(BOSS_MAX_PAUSE)}."
+        if not error and not interval > pause:
+            error = ("❌ Las siguientes rondas se cuentan desde que **empieza** una mecánica hasta que empieza la otra, "
+                     "así que deben durar más que la mecánica.")
         if not error and not first < total <= MAX_INTERVAL:
             error = f"❌ La duración total debe ser mayor que la primera ronda y como máximo {format_duration(MAX_INTERVAL)}."
         if error:
